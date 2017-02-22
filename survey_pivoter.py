@@ -70,8 +70,8 @@ if spss == True:
     df1 = get_df(input_filename, True)
     df2 = get_df(input_filename, False)
 else:
-    df1 = pd.read_csv(input_filename_l, low_memory=False)
-    df2 = pd.read_csv(input_filename_v, low_memory=False)
+    df1 = pd.read_csv(input_filename_l, low_memory=False, encoding="iso-8859-1")
+    df2 = pd.read_csv(input_filename_v, low_memory=False, encoding="iso-8859-1")
 
 if df1.shape != df2.shape:
     print("Shape of labels data is {} and shape of values data is {}".format(df1.shape, df2.shape))
@@ -81,12 +81,19 @@ varnames = df1.columns
 if spss == True:
     varlabels = get_variable_labels(input_filename)
 else:
+    # will eventually need to replace this with the actual text of the question
     varlabels = varnames
+
+#df1: label data
+#df2: value data
+#df3: merge, add two columns next to each other
 
 varmap = dict(zip(varnames, varlabels))
 df3 = df1.merge(df2, left_index=True, right_index=True, suffixes=('_l', '_v'))
 
-print(df3)
+# print(str(df1.size));
+# print(str(df2.size));
+# print(str(df3.size));
 
 new_df_cols = []
 
@@ -106,6 +113,7 @@ for col in varnames:
         new_df_cols.append(df3[lab])
         new_df_cols.append(df3[val])
 
+# transposed the needed columns, basically pivotting right here
 df = pd.DataFrame(new_df_cols).T
 df_cols = df.columns
 
@@ -126,7 +134,7 @@ def get_count_neg_map(domain):
         m[domain[int(np.floor(l/2))]] = .5
     return(m)
 
-# identify the necessary columns to be pivoted. If the columns
+# identify the necessary columns to keep as column as well. If the columns
 # have numerical/categorical data, it will suffixed with "_l"
 every_row = []
 for v in include_in_every_row:
@@ -139,7 +147,9 @@ for v in include_in_every_row:
     else:
         every_row.append(v)
 
-#construct the new data frame        
+# print(str(varnames.size))
+
+#construct the new data frame with the right format        
 dataframes = []
 for v in varnames:
     if v not in dont_pivot:
@@ -149,6 +159,8 @@ for v in varnames:
                                'survey_name', 'year', 'id', 'question_varname',
                                'question_text', 'answer_text', 'answer_value', 
                                'weight', 'count_negative'] + every_row)
+
+        # add question columns, with both texts and question id
         if '{}_l'.format(v) in df_cols:
             labels = df['{}_l'.format(v)]
             vals = df['{}_v'.format(v)]
@@ -157,17 +169,20 @@ for v in varnames:
             vals = df[v]
         pivoted['answer_value'] = vals
         pivoted['answer_text'] = labels
-        # Figure out which indices to exclude from analysis
+
+        # Figure out which indices to exclude from analysis. NOT SURE WHAT THIS IS DOING?
         if len(labels.dropna()) > 0:
             exclude = pd.Series(False, index=np.arange(0, len(labels)))
             exclude[(labels.notnull()) & (labels.dropna().astype(str).str.lower().isin(exclude_from_analysis))] = True
-        # Now figure out domain excluding 'exclude from analysis' answers
+
+        # Now figure out domain excluding 'exclude from analysis' answers. NOT SURE WHAT THIS IS DOING?        
         domain = list(pd.unique(vals[(labels.notnull()) & (~labels.isin(exclude_from_analysis))].dropna().values))
         domain.sort()
         m = get_count_neg_map(domain)
         pivoted.count_negative = 0
         if len(m) > 0:
             pivoted['count_negative'] = vals.replace(m)
+
         pivoted['survey_name'] = survey_name
         pivoted['year'] = year
         pivoted['id'] = df[id_col]

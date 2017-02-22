@@ -1,3 +1,10 @@
+# Information
+This file is modified by Son Ngo'17 as part of a project with Bowdoin College, Institutional Research, Analytics & Consulting Office. The collaborator of this project is Steve Papaccio.
+
+# Updates
+## 2/22/2017:
+- Change encoding option to "iso-8859-1" from "utf8"
+
 # Overview
 
 SurveyPivoter is a fairly simple Python 3 script that takes in a survey data file with one row per survey response and outputs a new file that's one row per question response. It's for taking files that come out of Qualtrics (or other survey software) and transforming them for use in Tableau, using [Steve Wexler's recommended methods of survey data visualization](http://www.datarevelations.com/visualizing-survey-data).
