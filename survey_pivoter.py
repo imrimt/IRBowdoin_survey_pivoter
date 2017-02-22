@@ -45,12 +45,13 @@ if spss:
 
 output_file = '{}_{}_pivoted.csv'.format(year, survey_name.lower().replace(' ', '_'))
 
+# applies to spss file only
 def get_df(filename, val_labels):
     # This is a really weird workaround used because the pandas2ri method was changing the
     # data that came back to code N/As incorrectly when value labels were on. So now R 
     # writes csvs and pandas reads them
     tmpfile = 'tmp_spss_reader.csv'
-    r_commands = """
+    r_commands = """ 
     df = suppressWarnings(foreign::read.spss("{}", to.data.frame = TRUE, use.value.labels = {}))
     write.csv(df, file='{}', row.names=FALSE)
     """.format(filename, str(val_labels).upper(), tmpfile)
@@ -59,6 +60,7 @@ def get_df(filename, val_labels):
     os.remove(tmpfile)
     return(d)
 
+# applies to spss file only
 def get_variable_labels(filename):
     w = r('as.data.frame(attributes(foreign::read.spss("{}"))["variable.labels"])[,1]'.format(filename))
     cat = pandas2ri.ri2py(w)
@@ -84,15 +86,22 @@ else:
 varmap = dict(zip(varnames, varlabels))
 df3 = df1.merge(df2, left_index=True, right_index=True, suffixes=('_l', '_v'))
 
+print(df3)
+
 new_df_cols = []
 
 for col in varnames:
     lab = '{}_l'.format(col)
     val = '{}_v'.format(col)
+
+    # if there is no mapping, i.e no category
+    # combine the two columns into one
     if df3[lab].equals(df3[val]):
         a = df3[lab]
         a.name = col
         new_df_cols.append(a)
+
+    # if there is a mapping, numerical values
     else:
         new_df_cols.append(df3[lab])
         new_df_cols.append(df3[val])
@@ -105,6 +114,7 @@ df_cols = df.columns
 if weight_col not in df_cols:
     df[weight_col] = 1
 
+# What is this one for?
 def get_count_neg_map(domain):
     l = len(domain)
     m = defaultdict(lambda: 0)
@@ -116,6 +126,8 @@ def get_count_neg_map(domain):
         m[domain[int(np.floor(l/2))]] = .5
     return(m)
 
+# identify the necessary columns to be pivoted. If the columns
+# have numerical/categorical data, it will suffixed with "_l"
 every_row = []
 for v in include_in_every_row:
     if v not in df.columns:
@@ -127,10 +139,12 @@ for v in include_in_every_row:
     else:
         every_row.append(v)
 
-        
+#construct the new data frame        
 dataframes = []
 for v in varnames:
     if v not in dont_pivot:
+
+        # built-in required columns for every row
         pivoted = pd.DataFrame(columns = [
                                'survey_name', 'year', 'id', 'question_varname',
                                'question_text', 'answer_text', 'answer_value', 

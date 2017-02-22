@@ -23,4 +23,3 @@ The script computes a variable called 'count_negative' which is used in Steve We
 One advantage of using an SPSS file as input is that in SPSS you can encode labels associated with the variable name, in that case the output file will have question_varname set to the name of the question variable (e.g. satisf) and question_text set to the full text of the question. If inputting csv files from Qualtrics, question_variable and question_text will both be set to the variable name. A workaround to this is to use the first header row in the 'values' csv file (deleting the second row) and the second header row in the 'labels' csv file.
 
 This script is still under development and contributions are welcome!
-
