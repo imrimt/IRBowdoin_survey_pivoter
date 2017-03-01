@@ -10,9 +10,15 @@ This file is modified by Son Ngo'17 as part of a project with Bowdoin College, I
 - Fill the "answer_text" column with the right text using the mapping from value_label_map file.
 - Change the header of the output file to its corresponding label from the mapping.
 - In the case of duplicate labels, the first instance will be in original label, and any other instance will have an additional indicator which contains their original value before the mapping in parentheses. 
-	E.g: V3 --> Name
-		 V4 --> Name
-	In output file, the column header will appear as: Name ..... Name (V4)
+E.g:
+
+	V3 --> Name
+
+	V4 --> Name
+
+	Namd --> Name
+
+	In output file, the column header will appear as: Name ..... Name (V4) .... Name (Name)
 
 # Overview
 
