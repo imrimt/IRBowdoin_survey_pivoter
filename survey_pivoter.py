@@ -28,13 +28,14 @@ with open(config_file, 'r') as ymlfile:
         if spss == False:
             input_filename_l = cfg['input_filename_with_labels']
             input_filename_v = cfg['input_filename_with_values']
+            input_filename_l_v_map = cfg['input_filename_value_label_map']
         elif spss == True:
             input_filename = cfg['input_filename']
         else:
             raise Exception(
                 "Configuration variable 'spss' must be set either to True or False (boolean var, not a string) in config file. Actual value is {}".format(spss)
             )
-        include_in_every_row = cfg['varables_to_include_in_every_row_of_output_file']
+        both_attribute_and_question = cfg['both_attribute_and_question']
         dont_pivot = cfg['dont_pivot']
         exclude_from_analysis = cfg['exclude_from_analysis']
     except KeyError as e:
@@ -60,11 +61,29 @@ def get_df(filename, val_labels):
     os.remove(tmpfile)
     return(d)
 
-# applies to spss file only
-def get_variable_labels(filename):
-    w = r('as.data.frame(attributes(foreign::read.spss("{}"))["variable.labels"])[,1]'.format(filename))
-    cat = pandas2ri.ri2py(w)
-    return(list(cat))
+# get the labels (text) for variables
+def get_variable_labels(filename, varnames):
+    if (spss == True):
+        w = r('as.data.frame(attributes(foreign::read.spss("{}"))["variable.labels"])[,1]'.format(filename))
+        cat = pandas2ri.ri2py(w)
+        return(list(cat))
+    else:
+        # open the file here
+        # index 1 for the second sheet        
+        # l_v_map = pd.read_excel(filename, 1, parse_cols="Name, Label", encoding="iso-8859-1")
+
+        l_v_df = pd.read_excel(filename, 1)
+        l_v_map = dict(zip(l_v_df["Name"], l_v_df["Label"]))
+        
+        label_list = []
+
+        for name in varnames:
+            if name in l_v_map:
+                label_list.append(l_v_map[name])
+            else:
+                label_list.append(name)
+        
+        return label_list
     
 if spss == True:
     df1 = get_df(input_filename, True)
@@ -78,11 +97,12 @@ if df1.shape != df2.shape:
     raise
 
 varnames = df1.columns
+
 if spss == True:
-    varlabels = get_variable_labels(input_filename)
+    varlabels = get_variable_labels(input_filename, [])
 else:
     # will eventually need to replace this with the actual text of the question
-    varlabels = varnames
+    varlabels = get_variable_labels(input_filename_l_v_map, varnames)
 
 #df1: label data
 #df2: value data
@@ -90,10 +110,6 @@ else:
 
 varmap = dict(zip(varnames, varlabels))
 df3 = df1.merge(df2, left_index=True, right_index=True, suffixes=('_l', '_v'))
-
-# print(str(df1.size));
-# print(str(df2.size));
-# print(str(df3.size));
 
 new_df_cols = []
 
@@ -115,6 +131,40 @@ for col in varnames:
 
 # transposed the needed columns, basically pivotting right here
 df = pd.DataFrame(new_df_cols).T
+
+# create the attributes list here
+attributes = []
+attributes_rename = {}
+attributes_rename_backward = {}
+for name in varnames:
+    if not name.startswith("Q"):
+        # print(name)
+        if name in varmap:
+            rename = varmap[name]
+
+            if rename in attributes_rename_backward:
+                newname = "{} ({})".format(rename, name)
+                rename = newname
+            else:
+                attributes_rename_backward[rename] = name
+                # attribute contains the transformed name
+                
+            attributes.append(rename)
+            attributes_rename[name] = rename
+
+            name_l = name + '_l'
+            if (name_l in df.columns):
+                rename_l = rename + '_l'
+                attributes_rename[name_l] = rename_l
+
+        # we do not pivot the attribute columns
+        # unless we want certain columns to be pivoted as well
+        if not name in both_attribute_and_question:
+            dont_pivot.append(name)
+
+print(attributes)
+
+df.rename(columns=attributes_rename, inplace=True)
 df_cols = df.columns
 
 # If weight column specified above doesn't exist, 
@@ -137,7 +187,8 @@ def get_count_neg_map(domain):
 # identify the necessary columns to keep as column as well. If the columns
 # have numerical/categorical data, it will suffixed with "_l"
 every_row = []
-for v in include_in_every_row:
+# for v in include_in_every_row:
+for v in attributes:
     if v not in df.columns:
         if v + '_l' in df.columns:
             every_row.append(v + '_l')
@@ -147,9 +198,7 @@ for v in include_in_every_row:
     else:
         every_row.append(v)
 
-# print(str(varnames.size))
-
-#construct the new data frame with the right format        
+# construct the new data frame with the right format        
 dataframes = []
 for v in varnames:
     if v not in dont_pivot:
@@ -160,13 +209,25 @@ for v in varnames:
                                'question_text', 'answer_text', 'answer_value', 
                                'weight', 'count_negative'] + every_row)
 
+        if v in both_attribute_and_question:
+            v = attributes_rename[v]
+
         # add question columns, with both texts and question id
-        if '{}_l'.format(v) in df_cols:
+        if '{}_l'.format(v) in df_cols and v not in attributes:
             labels = df['{}_l'.format(v)]
             vals = df['{}_v'.format(v)]
+
+        # this is the part where a value that doesn't have a corresponding 
+        # variable should be kept as it is 
         else:
-            labels = pd.Series(np.nan, index=np.arange(0, len(df)))
+            # create a range value from 0 to the length of data frame? Not 
+            # exactly sure but it seems like it
+            # labels = pd.Series(np.nan, index=np.arange(0, len(df)))            
+
+            # keep it as it is 
+            labels = df[v]
             vals = df[v]
+
         pivoted['answer_value'] = vals
         pivoted['answer_text'] = labels
 
@@ -187,7 +248,7 @@ for v in varnames:
         pivoted['year'] = year
         pivoted['id'] = df[id_col]
         pivoted['question_varname'] = v
-        pivoted['question_text'] = varmap[v]
+        pivoted['question_text'] = v if v in attributes else varmap[v]
         pivoted['weight'] = df[[weight_col]]
         pivoted[every_row] = df[every_row]
         dataframes.append(pivoted)

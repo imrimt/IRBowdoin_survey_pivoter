@@ -5,6 +5,15 @@ This file is modified by Son Ngo'17 as part of a project with Bowdoin College, I
 ## 2/22/2017:
 - Change encoding option to "iso-8859-1" from "utf8"
 
+## 3/1/2017:
+- Create an automated "attributes" array to replace the munual column_in_every_row config file.
+- Fill the "answer_text" column with the right text using the mapping from value_label_map file.
+- Change the header of the output file to its corresponding label from the mapping.
+- In the case of duplicate labels, the first instance will be in original label, and any other instance will have an additional indicator which contains their original value before the mapping in parentheses. 
+	E.g: V3 --> Name
+		 V4 --> Name
+	In output file, the column header will appear as: Name ..... Name (V4)
+
 # Overview
 
 SurveyPivoter is a fairly simple Python 3 script that takes in a survey data file with one row per survey response and outputs a new file that's one row per question response. It's for taking files that come out of Qualtrics (or other survey software) and transforming them for use in Tableau, using [Steve Wexler's recommended methods of survey data visualization](http://www.datarevelations.com/visualizing-survey-data).

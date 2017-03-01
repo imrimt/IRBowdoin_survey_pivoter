@@ -11,7 +11,7 @@ survey_name: 'Senior Survey'
 # The name of the column in the input data file(s) that is a unique
 # identifier for individual respondents (or individual rows in the 
 # input file)
-id_column: 'ExternalDataReference'
+id_column: 'STUID'
 
 # Name of weight column in input data file(s). If you have no weight
 # column in your input data file, make up a value here such as 'weight' 
@@ -34,33 +34,17 @@ weight_col: 'wt'
 # since installing rpy2 isn't easy.
 spss: False
 #input_filename: 'sample_data.sav'
-input_filename_with_labels: 'sample_data_l.csv'
-input_filename_with_values: 'sample_data_v.csv'
+input_filename_with_labels: 'Sample Data/2013_l.csv'
+input_filename_with_values: 'Sample Data/2013_v.csv'
+input_filename_value_label_map: 'Sample Data/2013_l_v_map.xlsx'
 
 # These are names of variables in the input file that you want to 
 # include in every row of the reshaped long file. They are generally 
 # metadata, or things you want to analyze the survey by. You don't
 # need to include your weight or id columns here, since they'll
 # automatically be included
-varables_to_include_in_every_row_of_output_file: [
-    'V2',
-    'V7',
-    'finished',
-    'gender',
-    'sex_a',
-    'OTHER1',
-    'OTHER2',
-    'OTHER3',
-    'race_ipeds',
-    'major1_full',
-    'major2_full',
-    'major3_full',
-    'major1',
-    'major2',
-    'major3',
-    'sex_merge',
-    'insttype',
-    'inst'
+both_attribute_and_question: [
+    'V1'
 ]
 
 # These are columns you don't want to transpose - generally ids, 
@@ -68,14 +52,7 @@ varables_to_include_in_every_row_of_output_file: [
 # if you make this an empty list, you'll just end up with some extra 
 # nonsense rows in your output file
 dont_pivot: [
-    'ResponseID',
-    'ExternalDataReference',
-    'wt',
-    'V2',
-    'V7',
-    'start',
-    'end',
-    'finished'
+
 ]
 
 # This is a list of the text responses you want to exclude from analysis
