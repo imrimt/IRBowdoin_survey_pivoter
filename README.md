@@ -6,7 +6,7 @@ This file is modified by Son Ngo'17 as part of a project with Bowdoin College, I
 - Change encoding option to "iso-8859-1" from "utf8"
 
 ## 3/1/2017:
-- Create an automated "attributes" array to replace the munual column_in_every_row config file.
+- Create an automated "attributes" array to replace the manual column_in_every_row config file.
 - Fill the "answer_text" column with the right text using the mapping from value_label_map file.
 - Change the header of the output file to its corresponding label from the mapping.
 - In the case of duplicate labels, the first instance will be in original label, and any other instance will have an additional indicator which contains their original value before the mapping in parentheses. 
@@ -16,9 +16,15 @@ E.g:
 
 	V4 --> Name
 
-	Namd --> Name
+	Name --> Name
 
 	In output file, the column header will appear as: Name ..... Name (V4) .... Name (Name)
+
+## 3/8/2017:
+- Add question_group_varname and question_group_text column, using the Q#_* pattern so that everything 
+before the first _ is a group. The group question text is the longest common string of its group members' text. If the length of the common string is less than a threshold (specified in the config file), then use the group question value as the text.
+- We decide that Q#a and Q# belong to two different groups.
+- We also striping off line break ('\n' and '\r') and tab characters ('\t') that appear in a response string to prevent unwanted line breaks or column spans.
 
 # Overview
 

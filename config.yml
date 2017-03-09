@@ -34,9 +34,9 @@ weight_col: 'wt'
 # since installing rpy2 isn't easy.
 spss: False
 #input_filename: 'sample_data.sav'
-input_filename_with_labels: 'Sample Data/2013_l.csv'
-input_filename_with_values: 'Sample Data/2013_v.csv'
-input_filename_value_label_map: 'Sample Data/2013_l_v_map.xlsx'
+input_filename_with_labels: 'text.csv'
+input_filename_with_values: 'value.csv'
+input_filename_value_label_map: 'map.xlsx'
 
 # These are names of variables in the input file that you want to 
 # include in every row of the reshaped long file. They are generally 
@@ -54,6 +54,10 @@ both_attribute_and_question: [
 dont_pivot: [
 
 ]
+
+# Determine the minimum length of the common substring when determining 
+# the question group text
+common_string_threshold: 4
 
 # This is a list of the text responses you want to exclude from analysis
 # for all questions (not case sensitive). If you put an empty list here

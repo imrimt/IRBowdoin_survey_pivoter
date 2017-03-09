@@ -38,6 +38,7 @@ with open(config_file, 'r') as ymlfile:
         both_attribute_and_question = cfg['both_attribute_and_question']
         dont_pivot = cfg['dont_pivot']
         exclude_from_analysis = cfg['exclude_from_analysis']
+        COMMON_STRING_THRESHOLD = cfg['common_string_threshold']
     except KeyError as e:
         raise KeyError("Expected variable {} in config file {} but it wasn't found".format(e, config_file))
 
@@ -147,7 +148,6 @@ for name in varnames:
                 rename = newname
             else:
                 attributes_rename_backward[rename] = name
-                # attribute contains the transformed name
                 
             attributes.append(rename)
             attributes_rename[name] = rename
@@ -162,8 +162,9 @@ for name in varnames:
         if not name in both_attribute_and_question:
             dont_pivot.append(name)
 
-print(attributes)
+# print(attributes)
 
+# rename the columns that are used as attributes
 df.rename(columns=attributes_rename, inplace=True)
 df_cols = df.columns
 
@@ -184,6 +185,15 @@ def get_count_neg_map(domain):
         m[domain[int(np.floor(l/2))]] = .5
     return(m)
 
+# clean the dataframe for \n, \r and \t characters
+# Note: for some reason, we have to use str.replace here instead 
+# of the df.replace function, as it doesn't replace the special 
+# characters
+for v in df.select_dtypes([np.object]).columns[1:]:
+    df[v] = df[v].astype(str)
+    df[v] = (df[v]).str.replace('\r', ', ')
+    df[v] = (df[v]).str.replace('\t', ', ')
+
 # identify the necessary columns to keep as column as well. If the columns
 # have numerical/categorical data, it will suffixed with "_l"
 every_row = []
@@ -198,17 +208,31 @@ for v in attributes:
     else:
         every_row.append(v)
 
+# find the largest common string from the beginninng of sa and sb
+def common_start(sa, sb):
+    def _iter():
+        for a, b in zip(sa, sb):
+            if a == b:
+                yield a
+            else:
+                return
+
+    return ''.join(_iter())
+
 # construct the new data frame with the right format        
 dataframes = []
+group_map = {}
 for v in varnames:
     if v not in dont_pivot:
 
         # built-in required columns for every row
         pivoted = pd.DataFrame(columns = [
                                'survey_name', 'year', 'id', 'question_varname',
-                               'question_text', 'answer_text', 'answer_value', 
-                               'weight', 'count_negative'] + every_row)
+                               'question_text', 'question_group_varname', 'question_group_text', 
+                               'answer_text', 'answer_value', 'weight', 'count_negative'] 
+                               + every_row)
 
+        # change v to be the renamed value if v is a pivoted attribute
         if v in both_attribute_and_question:
             v = attributes_rename[v]
 
@@ -247,12 +271,52 @@ for v in varnames:
         pivoted['survey_name'] = survey_name
         pivoted['year'] = year
         pivoted['id'] = df[id_col]
+
+        question_text = v if v in attributes else varmap[v]
+
+        # create group if there is a '_'
+        if '_' in v:
+            group_name_var = v[:v.find('_')]
+        else:
+            group_name_var = v
+
+        # if there is no mapping in group_map, implying that this is the first 
+        # occurrence of group_name
+        if group_name_var not in group_map:
+            group_map[group_name_var] = question_text
+            group_name_text = question_text
+
+        # there is a mapping, so update the mapped value string by finding
+        # the most common string with the current value. If the common string 
+        # is less than threshold number of characters, then use group_name_var
+        # as the text
+        else:
+            common_string = common_start(question_text, group_map[group_name_var])
+            if (len(common_string) >= COMMON_STRING_THRESHOLD):
+                group_name_text = common_string
+            else:
+                group_name_text = group_name_var
+
+            group_map[group_name_var] = group_name_text
+
         pivoted['question_varname'] = v
         pivoted['question_text'] = v if v in attributes else varmap[v]
+        pivoted['question_group_varname'] = group_name_var
+        pivoted['question_group_text'] = group_name_text
         pivoted['weight'] = df[[weight_col]]
         pivoted[every_row] = df[every_row]
         dataframes.append(pivoted)
-        
+
+# print(group_map)
+# update group_text according to their group name using the group map
+def update_group_text(group_name):
+    return group_map[group_name]
+
+# parse through the data frame one more time to update group_text
+for row in dataframes:
+    row['question_group_text'] = row['question_group_varname'].apply(update_group_text)
+
+########### FINAL PRODUCT ###########
 final_product = pd.concat(dataframes)
 final_product = final_product[final_product['answer_value'].notnull()]
 final_product = final_product[final_product['answer_value'].str.strip() != '']
