@@ -1,11 +1,38 @@
 # Information
 This file is modified by Son Ngo'17 as part of a project with Bowdoin College, Institutional Research, Analytics & Consulting Office. The collaborator of this project is Steve Papaccio.
 
-# Updates
-## 2/22/2017:
+# Overview
+
+SurveyPivoter is a fairly simple Python 3 script that takes in a survey data file with one row per survey response and outputs a new file that's one row per question response. It's for taking files that come out of Qualtrics (or other survey software) and transforming them for use in Tableau, using [Steve Wexler's recommended methods of survey data visualization](http://www.datarevelations.com/visualizing-survey-data).
+
+It requires installation of the following python libraries (using pip install [library name] or your preferred method):
+- pandas
+- PyYAML
+- tqdm (for progress bar)
+
+*If you want the script to work on SPSS .sav files, you also need to install R and the rpy2 library.* Unfortunately installing rpy2 can be a bit challenging. We'll try to update the documentation with tips once we find them, but in the meantime, if you're just getting started, you may want to stick with csv files at first. 
+ 
+To run the script from the directory where it's located:
+
+```
+python3 survey_pivoter.py [config_file]
+```
+
+The sample config file included here, config.yml, contains a lot of documentation about all the parameters that need to be specified for the script to work.
+
+Sample data files are also included. If opting for csv files as your input, these can be created by taking an SPSS file and saving it as a csv file twice, once with 'Save value labels where defined instead of data files' checked and once with it unchecked. They can also be created by taking any Qualtrics survey, and downloading the csv file twice, once with 'Use choice text' selected and once with 'Use numeric values' selected. *Note that if you're using Qualtrics csv files, you'll have to delete one of the two header rows in each of your csv files before running the script.*
+
+The script computes a variable called 'count_negative' which is used in Steve Wexler's diverging stacked bar charts. The script assumes that the top half of responses on the numeric scale are positive and the bottom half are negative. If there's an odd number of possible answers, the middle category is counted as half negative and half positive. A shortcoming of the script is that it has no knowledge of the domain of possible answers for a given question, it only knows about the ones that were actually selected by at least one respondent. So if you had a 5 point scale and everyone answered 3, 4, or 5, the script would treat 3 as negative, 4 as half negative, half positive and 5 as positive. *This issue has been fixed in the most current version (see Updates).*
+
+One advantage of using an SPSS file as input is that in SPSS you can encode labels associated with the variable name, in that case the output file will have question_varname set to the name of the question variable (e.g. satisf) and question_text set to the full text of the question. If inputting csv files from Qualtrics, question_variable and question_text will both be set to the variable name. A workaround to this is to use the first header row in the 'values' csv file (deleting the second row) and the second header row in the 'labels' csv file.
+
+This script is still under development and contributions are welcome!
+
+# Software Updates
+### 2/22/2017:
 - Change encoding option to "iso-8859-1" from "utf8"
 
-## 3/1/2017:
+### 3/1/2017:
 - Create an automated "attributes" array to replace the manual column_in_every_row config file.
 - Fill the "answer_text" column with the right text using the mapping from value_label_map file.
 - Change the header of the output file to its corresponding label from the mapping.
@@ -20,34 +47,14 @@ E.g:
 
 	In output file, the column header will appear as: Name ..... Name (V4) .... Name (Name)
 
-## 3/8/2017:
+### 3/8/2017:
 - Add question_group_varname and question_group_text column, using the Q#_* pattern so that everything 
 before the first _ is a group. The group question text is the longest common string of its group members' text. If the length of the common string is less than a threshold (specified in the config file), then use the group question value as the text.
 - We decide that Q#a and Q# belong to two different groups.
 - We also striping off line break ('\n' and '\r') and tab characters ('\t') that appear in a response string to prevent unwanted line breaks or column spans.
 
-# Overview
-
-SurveyPivoter is a fairly simple Python 3 script that takes in a survey data file with one row per survey response and outputs a new file that's one row per question response. It's for taking files that come out of Qualtrics (or other survey software) and transforming them for use in Tableau, using [Steve Wexler's recommended methods of survey data visualization](http://www.datarevelations.com/visualizing-survey-data).
-
-It requires installation of the following python libraries (using pip install [library name] or your preferred method):
-pandas
-PyYAML
-
-*If you want the script to work on SPSS .sav files, you also need to install R and the rpy2 library.* Unfortunately installing rpy2 can be a bit challenging. We'll try to update the documentation with tips once we find them, but in the meantime, if you're just getting started, you may want to stick with csv files at first. 
- 
-To run the script from the directory where it's located:
-
-```
-python3 survey_pivoter.py [config_file]
-```
-
-The sample config file included here, config.yml, contains a lot of documentation about all the parameters that need to be specified for the script to work.
-
-Sample data files are also included. If opting for csv files as your input, these can be created by taking an SPSS file and saving it as a csv file twice, once with 'Save value labels where defined instead of data files' checked and once with it unchecked. They can also be created by taking any Qualtrics survey, and downloading the csv file twice, once with 'Use choice text' selected and once with 'Use numeric values' selected. *Note that if you're using Qualtrics csv files, you'll have to delete one of the two header rows in each of your csv files before running the script.*
-
-The script computes a variable called 'count_negative' which is used in Steve Wexler's diverging stacked bar charts. The script assumes that the top half of responses on the numeric scale are positive and the bottom half are negative. If there's an odd number of possible answers, the middle category is counted as half negative and half positive. A shortcoming of the script is that it has no knowledge of the domain of possible answers for a given question, it only knows about the ones that were actually selected by at least one respondent. So if you had a 5 point scale and everyone answered 3, 4, or 5, the script would treat 3 as negative, 4 as half negative, half positive and 5 as positive.
-
-One advantage of using an SPSS file as input is that in SPSS you can encode labels associated with the variable name, in that case the output file will have question_varname set to the name of the question variable (e.g. satisf) and question_text set to the full text of the question. If inputting csv files from Qualtrics, question_variable and question_text will both be set to the variable name. A workaround to this is to use the first header row in the 'values' csv file (deleting the second row) and the second header row in the 'labels' csv file.
-
-This script is still under development and contributions are welcome!
+### 3/15/2017:
+- Fix the renaming issue: first occurence of new name will be updated with its original name as well.
+- The full domain has been successfully obtained from the value_text mapping file, and loaded into the software. However, the count negative function has not been updated to our purpose. It has been fixed, to assume that the middle value is always in the middle (floor value) of the list.
+- Rearrange the columns to comply with our software specifications.
+- Add progress bar. Is this possible to do the same for file writing process?

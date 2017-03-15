@@ -5,13 +5,14 @@ import numpy as np
 import os
 import yaml
 from collections import defaultdict
+from tqdm import tqdm
 import sys
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("config_file", help="Path to config yaml file with survey-specific settings (e.g. config.yml)")
+parser.add_argument("config_file", help="Path to config yaml file with survey-specific settings " + 
+    "(e.g. config.yml)")
 args = parser.parse_args()
-
 
 config_file = args.config_file
 
@@ -33,7 +34,8 @@ with open(config_file, 'r') as ymlfile:
             input_filename = cfg['input_filename']
         else:
             raise Exception(
-                "Configuration variable 'spss' must be set either to True or False (boolean var, not a string) in config file. Actual value is {}".format(spss)
+                "Configuration variable 'spss' must be set either to True or False (boolean var, " + 
+                "not a string) in config file. Actual value is {}".format(spss)
             )
         both_attribute_and_question = cfg['both_attribute_and_question']
         dont_pivot = cfg['dont_pivot']
@@ -85,6 +87,89 @@ def get_variable_labels(filename, varnames):
                 label_list.append(name)
         
         return label_list
+
+# obtain the domain for each question
+def get_variable_value_domain(filename):
+    if (spss == True):
+        # do something with spss
+        print("SPSS file")
+    else:
+        range_df = pd.read_excel(filename, 0)    
+        range_df.rename(columns=dict(zip(range_df.columns, ["Question", "Value", "Label"])), inplace=True)
+
+        domain_map = {}
+
+        curr_question = ""
+
+        for row in range_df.itertuples():
+            index = row[0]
+
+            question = row[1]
+
+            if pd.isnull(question):
+                question = curr_question
+            else:
+                curr_question = question
+
+            question_value = row[2]
+            if pd.isnull(question_value): 
+                continue
+            question_value = int(question_value)
+
+            question_label = row[3]
+            # if pd.isnull(quesetion_label):
+            #     continue
+
+            tup = (question_value, question_label)
+            if not question in domain_map:                   
+                domain_map[question] = []
+            domain_map[question].append(tup)
+
+    return domain_map
+
+# This doesn't seem to be working as it's supposed to. Are we treating the median value as 0, and 
+# just shift the rest according to the median value? Need to fix this. Right now, everything below 
+# is given 1, and everything above is given 0. If there is no domain, just simply return 0.
+def get_count_neg_map(domain):
+    l = len(domain)
+    m = {}
+    if l == 0:
+        return m
+
+    midValue = domain[int(np.floor(l/2))]
+    # for i in range(0, int(np.floor(l/2))):
+    #     m[domain[i]] = 1
+    # for i in range(int(np.ceil(l/2)), l):
+    #     m[domain[i]] = 0
+    # if l % 2 != 0:
+    #     m[domain[int(np.floor(l/2))]] = 0.5
+
+    for i in range(0, l):
+        m[str(domain[i])] = str(domain[i] - midValue);
+
+    # for i in range(0, int(np.floor(l/2))):
+    #     m[domain[i]] = 1
+    # for i in range(int(np.ceil(l/2)), l):
+    #     m[domain[i]] = 0
+    # if l % 2 != 0:
+    #     m[domain[int(np.floor(l/2))]] = 0.5
+
+    return m
+
+# update group_text according to their group name using the group map
+def update_group_text(group_name):
+    return group_map[group_name]
+
+# find the largest common string from the beginninng of sa and sb
+def common_start(sa, sb):
+    def _iter():
+        for a, b in zip(sa, sb):
+            if a == b:
+                yield a
+            else:
+                return
+
+    return ''.join(_iter())
     
 if spss == True:
     df1 = get_df(input_filename, True)
@@ -110,6 +195,7 @@ else:
 #df3: merge, add two columns next to each other
 
 varmap = dict(zip(varnames, varlabels))
+domain_map = get_variable_value_domain(input_filename_l_v_map)
 df3 = df1.merge(df2, left_index=True, right_index=True, suffixes=('_l', '_v'))
 
 new_df_cols = []
@@ -133,22 +219,52 @@ for col in varnames:
 # transposed the needed columns, basically pivotting right here
 df = pd.DataFrame(new_df_cols).T
 
-# create the attributes list here
+# create the attributes list here. We also want to rename the attribute  column from their values 
+# to their labels (texts) in the output file. The renamed columns' name will be stored in 
+# attributes. We store the original name of the first occurence of any new name in
+# attribute_rename_backward.
 attributes = []
 attributes_rename = {}
 attributes_rename_backward = {}
-for name in varnames:
-    if not name.startswith("Q"):
-        # print(name)
+for name in tqdm(varnames, desc="Renaming Columns"):
+    if not name.startswith("Q"):        
         if name in varmap:
             rename = varmap[name]
 
+            # if there is a duplicate in the label of a name
             if rename in attributes_rename_backward:
+
+                # then add an extension that indicates its original name to the new name
                 newname = "{} ({})".format(rename, name)
+
+                # update the first occurrence of the new name. If this process has 
+                # already happened, then first_occ_name should return an empty string
+                # so we only do the process once
+                first_occ_name = attributes_rename_backward[rename]
+                if first_occ_name:
+                    index = attributes.index(rename)
+                    first_occ_rename = "{} ({})".format(rename, first_occ_name)
+                    attributes[index] = first_occ_rename                    
+                    attributes_rename[first_occ_name] = first_occ_rename
+
+                    # change the original name that corresponds to the first occurence of new name
+                    # to empty string to indicate that we shouldn't do this updating process more 
+                    # than one                    
+                    attributes_rename_backward[rename] = ""
+
+                    first_occ_name_l = name + '_l'
+                    if (name_l in df.columns):
+                        first_occ_rename_l = first_occ_rename + '_l'
+                        attributes_rename[first_occ_name_l] = first_occ_rename_l
+
                 rename = newname
+
             else:
+                # save the original name that corresponds to the first occurence of new name. 
+                # This value will be changed to empty string if we ever encounter this new 
+                # name again.
                 attributes_rename_backward[rename] = name
-                
+            
             attributes.append(rename)
             attributes_rename[name] = rename
 
@@ -162,8 +278,6 @@ for name in varnames:
         if not name in both_attribute_and_question:
             dont_pivot.append(name)
 
-# print(attributes)
-
 # rename the columns that are used as attributes
 df.rename(columns=attributes_rename, inplace=True)
 df_cols = df.columns
@@ -172,18 +286,6 @@ df_cols = df.columns
 # create it and set all weights to 1
 if weight_col not in df_cols:
     df[weight_col] = 1
-
-# What is this one for?
-def get_count_neg_map(domain):
-    l = len(domain)
-    m = defaultdict(lambda: 0)
-    for i in range(0, int(np.floor(l/2))):
-        m[domain[i]] = 1
-    for i in range(int(np.ceil(l/2)), l):
-        m[domain[i]] = 0
-    if l % 2 != 0:
-        m[domain[int(np.floor(l/2))]] = .5
-    return(m)
 
 # clean the dataframe for \n, \r and \t characters
 # Note: for some reason, we have to use str.replace here instead 
@@ -196,41 +298,27 @@ for v in df.select_dtypes([np.object]).columns[1:]:
 
 # identify the necessary columns to keep as column as well. If the columns
 # have numerical/categorical data, it will suffixed with "_l"
-every_row = []
-# for v in include_in_every_row:
-for v in attributes:
+attribute_col = []
+for v in tqdm(attributes, desc="Adding attributes"):
     if v not in df.columns:
         if v + '_l' in df.columns:
-            every_row.append(v + '_l')
+            attribute_col.append(v + '_l')
             print('Merged data file is missing column {0}, using {0}_l instead'.format(v))
         else:
             print('Merged data file is missing column {}, and no replacement was found'.format(v))
     else:
-        every_row.append(v)
-
-# find the largest common string from the beginninng of sa and sb
-def common_start(sa, sb):
-    def _iter():
-        for a, b in zip(sa, sb):
-            if a == b:
-                yield a
-            else:
-                return
-
-    return ''.join(_iter())
+        attribute_col.append(v)
 
 # construct the new data frame with the right format        
 dataframes = []
 group_map = {}
-for v in varnames:
+for v in tqdm(varnames, desc="Pivoting"):
     if v not in dont_pivot:
 
-        # built-in required columns for every row
-        pivoted = pd.DataFrame(columns = [
-                               'survey_name', 'year', 'id', 'question_varname',
-                               'question_text', 'question_group_varname', 'question_group_text', 
-                               'answer_text', 'answer_value', 'weight', 'count_negative'] 
-                               + every_row)
+        # order of columns
+        pivoted = pd.DataFrame(columns = ['survey_name', 'year', 'id'] + attribute_col +
+                               ['question_group_varname', 'question_group_text', 'question_varname', 'question_text',  
+                               'answer_text', 'answer_value', 'weight', 'count_negative'])
 
         # change v to be the renamed value if v is a pivoted attribute
         if v in both_attribute_and_question:
@@ -260,10 +348,17 @@ for v in varnames:
             exclude = pd.Series(False, index=np.arange(0, len(labels)))
             exclude[(labels.notnull()) & (labels.dropna().astype(str).str.lower().isin(exclude_from_analysis))] = True
 
-        # Now figure out domain excluding 'exclude from analysis' answers. NOT SURE WHAT THIS IS DOING?        
-        domain = list(pd.unique(vals[(labels.notnull()) & (~labels.isin(exclude_from_analysis))].dropna().values))
+        # Now figure out domain excluding 'exclude from analysis' answers using the domain_map built 
+        # earlier
+        # domain = list(pd.unique(vals[(labels.notnull()) & (~labels.isin(exclude_from_analysis))].dropna().values))
+        if v in domain_map:
+            # we only want the numerical value (i.e the first element in the tuple item)
+            domain = [item[0] for item in domain_map[v]]
+        else:
+            domain = []
         domain.sort()
         m = get_count_neg_map(domain)
+        print(m)
         pivoted.count_negative = 0
         if len(m) > 0:
             pivoted['count_negative'] = vals.replace(m)
@@ -304,19 +399,14 @@ for v in varnames:
         pivoted['question_group_varname'] = group_name_var
         pivoted['question_group_text'] = group_name_text
         pivoted['weight'] = df[[weight_col]]
-        pivoted[every_row] = df[every_row]
+        pivoted[attribute_col] = df[attribute_col]
         dataframes.append(pivoted)
-
-# print(group_map)
-# update group_text according to their group name using the group map
-def update_group_text(group_name):
-    return group_map[group_name]
 
 # parse through the data frame one more time to update group_text
 for row in dataframes:
     row['question_group_text'] = row['question_group_varname'].apply(update_group_text)
 
-########### FINAL PRODUCT ###########
+#============== FINAL PRODUCT ==============#
 final_product = pd.concat(dataframes)
 final_product = final_product[final_product['answer_value'].notnull()]
 final_product = final_product[final_product['answer_value'].str.strip() != '']
