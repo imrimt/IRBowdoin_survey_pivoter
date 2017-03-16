@@ -57,4 +57,10 @@ before the first _ is a group. The group question text is the longest common str
 - Fix the renaming issue: first occurence of new name will be updated with its original name as well.
 - The full domain has been successfully obtained from the value_text mapping file, and loaded into the software. However, the count negative function has not been updated to our purpose. It has been fixed, to assume that the middle value is always in the middle (floor value) of the list.
 - Rearrange the columns to comply with our software specifications.
-- Add progress bar. Is this possible to do the same for file writing process?
+- Add progress bar.
+
+### 3/16/2017:
+- Add try-catch blocks for file reading processes.
+- Disable the automatic inclusion of the ID column. User no longer needs to specify this in the config file since the ID column will be treated as an attribute.
+- Add the ability to completely disregard specific columns. These will not be included in the pivoting process, and the output file at all.
+- Code cleaning up.
