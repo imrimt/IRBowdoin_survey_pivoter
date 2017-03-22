@@ -34,8 +34,16 @@ weight_col: 'wt'
 # since installing rpy2 isn't easy.
 spss: False
 #input_filename: 'sample_data.sav'
+
+# UPDATE: the label file is no longer needed
 input_filename_with_labels: 'Test Data/text.csv'
+
 input_filename_with_values: 'Test Data/value.csv'
+
+# Make sure that this file has 2 sheets, the first sheet specifies the domain
+# a value-label mapping for each question's response (if any). The second sheet 
+# specifies a value-label for each column in the data. The name of each sheet
+# doesn't matter, but the order has to be maintained.
 input_filename_value_label_map: 'Test Data/map.xlsx'
 
 # These are names of variables in the input file that you want to 
@@ -44,8 +52,8 @@ input_filename_value_label_map: 'Test Data/map.xlsx'
 # need to include your weight or id columns here, since they'll
 # automatically be included
 both_attribute_and_question: [
-    'V1',
-    'V2'
+  'V1',
+  'V2'
 ]
 
 # These are columns you don't want to transpose - generally ids, 
@@ -65,7 +73,8 @@ columns_to_ignore: [
   'LocationAccuracy',
   'LocationLongitude',
   'LocationLatitude',
-  'V4'
+  'V4',
+  'V7'
 ]
 
 # Determine the minimum length of the common substring when determining 

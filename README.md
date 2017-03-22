@@ -64,3 +64,8 @@ before the first _ is a group. The group question text is the longest common str
 - Disable the automatic inclusion of the ID column. User no longer needs to specify this in the config file since the ID column will be treated as an attribute.
 - Add the ability to completely disregard specific columns. These will not be included in the pivoting process, and the output file at all.
 - Code cleaning up.
+
+### 3/22/2017:
+- Change how the script works: only require the value file, and use the responses' mapping from text_value_map file.
+- Clean all data inputs for special characters: "\r", "\t", "\n"
+- Add testing procedure, and get prepare to test.

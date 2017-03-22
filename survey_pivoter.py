@@ -29,6 +29,7 @@ parser.add_argument("config_file", help="Path to config yaml file with survey-sp
 args = parser.parse_args()
 
 config_file = args.config_file
+curr_map = {}
 
 with open(config_file, 'r') as ymlfile:
     try:
@@ -41,7 +42,7 @@ with open(config_file, 'r') as ymlfile:
         spss = bool(spss)
         weight_col = cfg['weight_col']
         if spss == False:
-            input_filename_l = cfg['input_filename_with_labels']
+            # input_filename_l = cfg['input_filename_with_labels']
             input_filename_v = cfg['input_filename_with_values']
             input_filename_l_v_map = cfg['input_filename_value_label_map']
         elif spss == True:
@@ -88,7 +89,7 @@ def get_df(filename, val_labels):
     os.remove(tmpfile)
     return(d)
 
-# get the labels (text) for variables
+# get the labels (text) for columns' variables
 def get_variable_labels(filename, varnames):
     if (spss == True):
         w = r('as.data.frame(attributes(foreign::read.spss("{}"))["variable.labels"])[,1]'.format(filename))
@@ -100,12 +101,15 @@ def get_variable_labels(filename, varnames):
         # l_v_map = pd.read_excel(filename, 1, parse_cols="Name, Label", encoding="iso-8859-1")
 
         try:
-            # 1 for second sheed of excel file
+            # 1 for second sheet of excel file
             l_v_df = pd.read_excel(filename, 1)
         except Exception as e:
             print("Reading error for \"{}\". Exiting.".format(filename))
             print("Error log: {}".format(e))
             quit()
+
+        clean_dataframe(l_v_df)
+
         l_v_map = dict(zip(l_v_df["Name"], l_v_df["Label"]))
         
         label_list = []
@@ -134,6 +138,8 @@ def get_variable_value_domain(filename):
 
         range_df.rename(columns=dict(zip(range_df.columns, ["Question", "Value", "Label"])), inplace=True)
 
+        clean_dataframe(range_df)
+
         domain_map = {}
 
         curr_question = ""
@@ -154,58 +160,86 @@ def get_variable_value_domain(filename):
             question_value = int(question_value)
 
             question_label = row[3]
-            # if pd.isnull(quesetion_label):
-            #     continue
-
-            tup = (question_value, question_label)
+            if pd.isnull(question_label):
+                continue
+            
             if not question in domain_map:                   
-                domain_map[question] = []
-            domain_map[question].append(tup)
+                domain_map[question] = {}
+
+            if question_value in domain_map[question]:
+                print("Duplicated labels for key {} in question {}. Please resolve the issue! Exiting...".format(question_value, question))
+                quit()
+            domain_map[question][question_value] = question_label
 
     return domain_map
 
 # Anything above the median should get the value of 0, below of 1. If the median can be computed (
 # i.e there are odd number of elements in the domain), then the median has value of 0.5.
-def get_count_neg_map(domain):
+def get_count_neg_map(domain, question):
     domain_length = len(domain)
+    domain_array = list(domain.keys())
+    domain_array.sort()
     map_result = {}
 
     if domain_length == 0:
         return map_result
 
+    check_domain(domain_array, question)
+
+    # below median --> 1
     for i in range(0, int(np.floor(domain_length/2))):
-        map_result[str(domain[i])] = 1
+        map_result[str(domain_array[i])] = 1
+
+    # above median --> 0
     for i in range(int(np.ceil(domain_length/2)), domain_length):
-        map_result[str(domain[i])] = 0
+        map_result[str(domain_array[i])] = 0
+
+    # if central point exists --> 0.5
     if domain_length % 2 != 0:
-        map_result[str(domain[int(np.floor(domain_length/2))])] = 0.5
+        map_result[str(domain_array[int(np.floor(domain_length/2))])] = 0.5
 
     return map_result
 
 # Shift all values by the median. The median is computed by taking the middle value (averages for 
 # even length). Then, all value is offset by the value of the median, rounding up to the nearest 
 # integer (in magnitude). 
-def get_normalized_by_median_map(domain):
+def get_normalized_by_median_map(domain, question):
     domain_length = len(domain)
+    domain_array = list(domain.keys())
+    domain_array.sort()
     map_result = {}
 
     if domain_length == 0:
         return map_result
 
+    check_domain(domain_array, question)
+
+    # compute median
     if domain_length % 2 != 0:
-        midValue = domain[int(np.floor(domain_length/2))]
+        midValue = domain_array[int(np.floor(domain_length/2))]
     else:
-        midValue = (domain[int(np.floor(domain_length/2))] + domain[int(np.ceil(domain_length/2))]) / 2
+        midValue = (domain_array[int(np.floor(domain_length/2))] + domain_array[int(np.ceil(domain_length/2))]) / 2
 
     for i in range(0, domain_length):
-        if (domain[i] < midValue):
-            map_result[str(domain[i])] = str(int(np.floor(domain[i] - midValue)))
-        elif (domain[i] > midValue):
-            map_result[str(domain[i])] = str(int(np.ceil(domain[i] - midValue)))
+        if (domain_array[i] < midValue):
+            map_result[str(domain_array[i])] = str(int(np.floor(domain_array[i] - midValue)))
+        elif (domain_array[i] > midValue):
+            map_result[str(domain_array[i])] = str(int(np.ceil(domain_array[i] - midValue)))
         else:
-            map_result[str(domain[i])] = 0
+            map_result[str(domain_array[i])] = 0
 
     return map_result
+
+def check_domain(domain_array, question):
+    prev = domain_array[0]
+    for item in domain_array[1:]:
+        if (item <= 0):
+            print("[WARNING] There is a non-positive value in the domain of question {}".format(question))
+            return
+        if (item != prev + 1):
+            print("[WARNING] There is discontinuity in the domain of question {}".format(question))
+            return
+        prev = item
 
 # update group_text according to their group name using the group map
 def update_group_text(group_name):
@@ -222,35 +256,59 @@ def common_start(sa, sb):
 
     return ''.join(_iter())
 
+# create a labels series that has a corresponding label to
+# every value in vals. If there is no mapping, then keep 
+# vals as original
+def map_value_to_label(vals, column_name):
+    labels = []
+    if column_name in domain_map:
+        curr_map = domain_map[column_name]
+        curr_list = list(curr_map.keys())
+        
+        if not curr_map:
+            return labels
+        else:            
+            for item in vals:
+                if not item.isdigit() or pd.isnull(item):
+                    labels.append(item)
+                else:
+                    item = int(item)
+                    if item not in curr_map:                    
+                        print("Do not find a mapping for the current value {}. Use original value instead. This is an error, please recheck your mapping file".format(item))
+                        labels.append(item)                        
+                    else:
+                        labels.append(curr_map[item])
+    return labels
+
+# clean the dataframe for \n, \r and \t characters
+# Note: for some reason, we have to use str.replace here instead 
+# of the df.replace function, as it doesn't replace the special 
+# characters
+def clean_dataframe(df):
+    for v in df.select_dtypes([np.object]).columns[1:]:
+        df[v] = df[v].astype(str)
+        df[v] = (df[v]).str.replace('\r', ', ')
+        df[v] = (df[v]).str.replace('\t', ', ')
+        df[v] = (df[v]).str.replace('\n', ', ')
+
 # =============================================
 # MAIN PROCESS
 # ============================================= 
 
-# raed in data frame for one with labels, one with values    
-if spss == True:
-    df1 = get_df(input_filename, True)
-    df2 = get_df(input_filename, False)
-else:
-    try:
-        df1 = pd.read_csv(input_filename_l, low_memory=False, encoding="iso-8859-1")
-    except Exception as e:
-        print("Reading error for \"{}\". Exiting.".format(input_filename_l))
-        print("Error log: {}".format(e))
-        quit()
-    try:
-        df2 = pd.read_csv(input_filename_v, low_memory=False, encoding="iso-8859-1")
-    except Exception as e:
-        print("Reading error for \"{}\". Exiting.".format(input_filename_v))
-        print("Error log: {}".format(e))
-        quit()  
-
-# need to make sure that these two dataframes have the same dimensions
-if df1.shape != df2.shape:
-    print("Shape of labels data is {} and shape of values data is {}".format(df1.shape, df2.shape))
-    raise
+# read in data frame for one with labels, one with values. SPSS no longer works for this script.
+# if spss == True:
+#     df1 = get_df(input_filename, True)
+#     df2 = get_df(input_filename, False)
+# else:
+try:
+    value_df = pd.read_csv(input_filename_v, low_memory=False, encoding="iso-8859-1")
+except Exception as e:
+    print("Reading error for \"{}\". Exiting.".format(input_filename_v))
+    print("Error log: {}".format(e))
+    quit()
 
 # obtain all the values of the columns
-varnames = [x for x in df1.columns if x not in columns_to_ignore]
+varnames = [x for x in value_df.columns if x not in columns_to_ignore]
 
 # print(varnames)
 
@@ -261,33 +319,11 @@ else:
     # will eventually need to replace this with the actual text of the question
     varlabels = get_variable_labels(input_filename_l_v_map, varnames)
 
-#df1: label data
-#df2: value data
-#df3: merge, add two columns next to each other
-
 varmap = dict(zip(varnames, varlabels))
 domain_map = get_variable_value_domain(input_filename_l_v_map)
-df3 = df1.merge(df2, left_index=True, right_index=True, suffixes=('_l', '_v'))
-
-new_df_cols = []
-
-for col in varnames:
-    lab = '{}_l'.format(col)
-    val = '{}_v'.format(col)
-
-    # if there is no mapping, i.e no category
-    # combine the two columns into one
-    if df3[lab].equals(df3[val]):
-        a = df3[lab]
-        a.name = col
-        new_df_cols.append(a)
-
-    # if there is a mapping, numerical values
-    else:
-        new_df_cols.append(df3[lab])
-        new_df_cols.append(df3[val])
 
 # transposed the needed columns, basically pivotting right here
+new_df_cols = [value_df[col] for col in varnames]
 df = pd.DataFrame(new_df_cols).T
 
 # create the attributes list here. We also want to rename the attribute  column from their values 
@@ -325,12 +361,6 @@ for name in tqdm(varnames, desc="Renaming Columns"):
                     # than one                    
                     attributes_rename_backward[rename] = ""
 
-                    # update the label column that corresponds to the name as well, if available
-                    first_occ_name_l = name + '_l'  
-                    if (name_l in df.columns):
-                        first_occ_rename_l = first_occ_rename + '_l'
-                        attributes_rename[first_occ_name_l] = first_occ_rename_l
-
                 rename = newname
 
             else:
@@ -341,12 +371,6 @@ for name in tqdm(varnames, desc="Renaming Columns"):
             
             attributes.append(rename)
             attributes_rename[name] = rename
-
-            # update the label column that corresponds to the name as well, if available
-            name_l = name + '_l'
-            if (name_l in df.columns):
-                rename_l = rename + '_l'
-                attributes_rename[name_l] = rename_l
 
         # we do not pivot the attribute columns
         # unless we want certain columns to be pivoted as well
@@ -362,25 +386,14 @@ df_cols = df.columns
 if weight_col not in df_cols:
     df[weight_col] = 1
 
-# clean the dataframe for \n, \r and \t characters
-# Note: for some reason, we have to use str.replace here instead 
-# of the df.replace function, as it doesn't replace the special 
-# characters
-for v in df.select_dtypes([np.object]).columns[1:]:
-    df[v] = df[v].astype(str)
-    df[v] = (df[v]).str.replace('\r', ', ')
-    df[v] = (df[v]).str.replace('\t', ', ')
+clean_dataframe(df)
 
 # identify the necessary columns to keep as column as well. If the columns
-# have numerical/categorical data, it will suffixed with "_l"
+# have numerical/categorical data, it will be suffixed with "_l"
 attribute_col = []
 for v in tqdm(attributes, desc="Adding attributes"):
     if v not in df.columns:
-        if v + '_l' in df.columns:
-            attribute_col.append(v + '_l')
-            print('Merged data file is missing column {0}, using {0}_l instead'.format(v))
-        else:
-            print('Merged data file is missing column {}, and no replacement was found'.format(v))
+        print('Merged data file is missing column {}, and no replacement was found'.format(v))
     else:
         attribute_col.append(v)
 
@@ -396,28 +409,18 @@ for v in tqdm(varnames, desc="Pivoting"):
         # order of columns
         pivoted = pd.DataFrame(columns = ['survey_name', 'year'] + attribute_col +
                                ['question_group_varname', 'question_group_text', 'question_varname', 
-                               'question_text', 'answer_text', 'answer_value', 'weight', 
-                               'count_negative', 'normalized_by_median'])
+                               'question_text', 'answer_value', 'answer_text', 
+                               'count_negative', 'normalized_by_median', 'weight'])
+
 
         # change v to be the renamed value if v is a pivoted attribute
         if v in both_attribute_and_question:
             v = attributes_rename[v]
 
-        # add question columns, with both texts and question id
-        if '{}_l'.format(v) in df_cols and v not in attributes:
-            labels = df['{}_l'.format(v)]
-            vals = df['{}_v'.format(v)]
+        vals = df[v]
 
-        # this is the part where a value that doesn't have a corresponding 
-        # variable should be kept as it is 
-        else:
-            # create a range value from 0 to the length of data frame? Not 
-            # exactly sure but it seems like it
-            # labels = pd.Series(np.nan, index=np.arange(0, len(df)))            
-
-            # keep it as it is 
-            labels = df[v]
-            vals = df[v]
+        temp_list = map_value_to_label(vals, v)
+        labels = vals if not temp_list else pd.Series(temp_list)
 
         pivoted['answer_value'] = vals
         pivoted['answer_text'] = labels
@@ -430,14 +433,13 @@ for v in tqdm(varnames, desc="Pivoting"):
         # Now figure out domain excluding 'exclude from analysis' answers using the domain_map built 
         # earlier
         # domain = list(pd.unique(vals[(labels.notnull()) & (~labels.isin(exclude_from_analysis))].dropna().values))
-        if v in domain_map:
-            # we only want the numerical value (i.e the first element in the tuple item)
-            domain = [item[0] for item in domain_map[v]]
+        if v in domain_map:                
+            domain = domain_map[v]
         else:
-            domain = []
-        domain.sort()
-        negative_map = get_count_neg_map(domain)
-        normalize_map = get_normalized_by_median_map(domain)
+            domain = {}
+        # domain.sort()
+        negative_map = get_count_neg_map(domain, v)
+        normalize_map = get_normalized_by_median_map(domain, v)
         
         pivoted.count_negative = 0
         pivoted.normalized_by_median = 0
