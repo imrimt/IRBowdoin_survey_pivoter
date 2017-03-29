@@ -1,7 +1,11 @@
 # Information
-This file is modified by Son Ngo'17 as part of a project with Bowdoin College, Institutional Research, Analytics & Consulting Office. The collaborator of this project is Steve Papaccio.
+This script is adapted and modified by Son Ngo'17 as part of a project with Bowdoin College, Institutional Research, Analytics & Consulting Office. The collaborator of this project is Steve Papaccio. The original author of this script is Courtney Wade and the GitHub page can be accessed [here](https://github.com/cwade/survey_pivoter).
+
+Bowdoin conducts surveys using Qualtrics, an online survey tool, and performs analysis on the results. Typical survey data files are provided by Qualtrics in a one row per survey respondent format. This format can make it difficult to perform certain types of analysis, particularly when using analysis and data visualization tools such as Tableau. There is a need to be able to easily “pivot” this data into a one row per question per response format that would be easier to analyze.
 
 # Overview
+
+*(SPSS file is no longer supported in this script)*
 
 SurveyPivoter is a fairly simple Python 3 script that takes in a survey data file with one row per survey response and outputs a new file that's one row per question response. It's for taking files that come out of Qualtrics (or other survey software) and transforming them for use in Tableau, using [Steve Wexler's recommended methods of survey data visualization](http://www.datarevelations.com/visualizing-survey-data).
 
@@ -9,63 +13,42 @@ It requires installation of the following python libraries (using pip install [l
 - pandas
 - PyYAML
 - tqdm (for progress bar)
-
-*If you want the script to work on SPSS .sav files, you also need to install R and the rpy2 library.* Unfortunately installing rpy2 can be a bit challenging. We'll try to update the documentation with tips once we find them, but in the meantime, if you're just getting started, you may want to stick with csv files at first. 
  
 To run the script from the directory where it's located:
 
 ```
-python3 survey_pivoter.py [config_file]
+python3 survey_pivoter.py [path/to/config_file]
 ```
 
-The sample config file included here, config.yml, contains a lot of documentation about all the parameters that need to be specified for the script to work.
+The sample config file included here, config.yml, contains a lot of documentation about all the survers' parameters that need to be specified for the script to work. Survey files will either come from Qualtrics directly or from COFHE.  In either case, they will adhere to a similar format.  There will be three sources of data to work with
 
-Sample data files are also included. If opting for csv files as your input, these can be created by taking an SPSS file and saving it as a csv file twice, once with 'Save value labels where defined instead of data files' checked and once with it unchecked. They can also be created by taking any Qualtrics survey, and downloading the csv file twice, once with 'Use choice text' selected and once with 'Use numeric values' selected. *Note that if you're using Qualtrics csv files, you'll have to delete one of the two header rows in each of your csv files before running the script.*
+| Data Source                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                  |
+|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Responses as values             | A spreadsheet containing one row per student and one column per question. Responses to the questions are recorded as values (e.g. “5”).                                                                                                                                                                                                                                                                                      |
+| Question names & labels         | A spreadsheet containing one row per question, with a column titled “Name” containing the question number (e.g. Q1, Q2, etc.) and a column titled “Label” containing the question text (e.g. “How satisfied were you with ...”). This spreadsheet may have other columns. Note: This spreadsheet is likely found in the same file as the “Response sets for each question” spreadsheet (second sheet) but may not always be. |
+| Response sets for each question | A spreadsheet containing the set of possible responses to each question. Note: This spreadsheet is likely found in the same file as the “Question names & labels” spreadsheet (first sheet) but may not always be.                                                                                                                                                                                                           |
 
-The script computes a variable called 'count_negative' which is used in Steve Wexler's diverging stacked bar charts. The script assumes that the top half of responses on the numeric scale are positive and the bottom half are negative. If there's an odd number of possible answers, the middle category is counted as half negative and half positive. A shortcoming of the script is that it has no knowledge of the domain of possible answers for a given question, it only knows about the ones that were actually selected by at least one respondent. So if you had a 5 point scale and everyone answered 3, 4, or 5, the script would treat 3 as negative, 4 as half negative, half positive and 5 as positive. *This issue has been fixed in the most current version (see Updates).*
+Sample data files are also included. These csv files can be created by taking an SPSS file and saving it as a csv file, unchecked 'Save value labels where defined instead of data files'. They can also be created by taking any Qualtrics survey, and downloading the csv with 'Use numeric values' selected. *Note that if you're using Qualtrics csv files, you'll have to delete one of the two header rows in each of your csv files before running the script.*
 
-One advantage of using an SPSS file as input is that in SPSS you can encode labels associated with the variable name, in that case the output file will have question_varname set to the name of the question variable (e.g. satisf) and question_text set to the full text of the question. If inputting csv files from Qualtrics, question_variable and question_text will both be set to the variable name. A workaround to this is to use the first header row in the 'values' csv file (deleting the second row) and the second header row in the 'labels' csv file.
+## Output Specifications
+
+The order of columns in the output file should be sorted as follows:
+ 1. Attribute columns
+ 2. Question group columns (value and text)
+ 3. Question columns (value and text)
+ 4. Response columns (value and text)
+ 5. Count_negative and normalized_by_median and weight columns
+
+The attribute columns refer to any non-question column in the input file, and those will not be pivoted unless specified as questions as well by the user in the config file. The name of these columns will be converted into their actual text if possible in the output file.
+
+The question group columns identify questions of the form Q#_* as member of group Q#. However, Q#a and Q# will be treated as two different groups. The question group text will be determined by the longest common string of its members' question texts.
+
+The question columns store the value and text of each question. If there is no corresponding text for any question, the value will serve as the text. This is true for the question group text as well.
+
+The response columns store the value and text of each response. If there is no corresponding text for any response, the value will serve as the text. This is true for the question group text as well. An error will also occur if a value is mapped to two different texts.
+
+The script computes a variable called 'count_negative' which is used in Steve Wexler's diverging stacked bar charts. The script assumes that the top half of responses on the numeric scale are positive and the bottom half are negative. If there's an odd number of possible answers, the middle value is counted as half negative and half positive (0.5). 
+
+The script also computes a variable called “normalized_by_median”. The values for this variable should be based on the range of responses for each question, with the value being offset by the value of the median. The median can be computed as the middle value of the range. If there are an even number of response types, take the average of the two middle values of the range. Then, the offset is rounded up to the nearest integer by magnitude. For example, (-0.5) is rounded to (-1), and (0.5) is rounded to (1).
 
 This script is still under development and contributions are welcome!
-
-# Software Updates
-### 2/22/2017:
-- Change encoding option to "iso-8859-1" from "utf8"
-
-### 3/1/2017:
-- Create an automated "attributes" array to replace the manual column_in_every_row config file.
-- Fill the "answer_text" column with the right text using the mapping from value_label_map file.
-- Change the header of the output file to its corresponding label from the mapping.
-- In the case of duplicate labels, the first instance will be in original label, and any other instance will have an additional indicator which contains their original value before the mapping in parentheses. 
-E.g:
-
-	V3 --> Name
-
-	V4 --> Name
-
-	Name --> Name
-
-	In output file, the column header will appear as: Name ..... Name (V4) .... Name (Name)
-
-### 3/8/2017:
-- Add question_group_varname and question_group_text column, using the Q#_* pattern so that everything 
-before the first _ is a group. The group question text is the longest common string of its group members' text. If the length of the common string is less than a threshold (specified in the config file), then use the group question value as the text.
-- We decide that Q#a and Q# belong to two different groups.
-- We also striping off line break ('\n' and '\r') and tab characters ('\t') that appear in a response string to prevent unwanted line breaks or column spans.
-
-### 3/15/2017:
-- Fix the renaming issue: first occurence of new name will be updated with its original name as well.
-- The full domain has been successfully obtained from the value_text mapping file, and loaded into the software. However, the count negative function has not been updated to our purpose. It has been fixed, to assume that the middle value is always in the middle (floor value) of the list.
-- Rearrange the columns to comply with our software specifications.
-- Add progress bar.
-
-### 3/16/2017:
-- Add try-catch blocks for file reading processes.
-- Disable the automatic inclusion of the ID column. User no longer needs to specify this in the config file since the ID column will be treated as an attribute.
-- Add the ability to completely disregard specific columns. These will not be included in the pivoting process, and the output file at all.
-- Code cleaning up.
-
-### 3/22/2017:
-- Change how the script works: only require the value file, and use the responses' mapping from text_value_map file.
-- Clean all data inputs for special characters: "\r", "\t", "\n"
-- Add testing procedure, and get prepare to test.

@@ -19,6 +19,12 @@ from tqdm import tqdm
 import sys
 import argparse
 
+# ============================================= 
+# GLOBAL LITERALS
+# =============================================
+ERROR_TAG = "[ERROR] "
+WARNING_TAG = "[WARNING] "
+
 # =============================================
 # PREPROCESSING FILE
 # ============================================= 
@@ -36,31 +42,15 @@ with open(config_file, 'r') as ymlfile:
         cfg = yaml.load(ymlfile)
         year = cfg['year']
         survey_name = cfg['survey_name']
-        # id_col = cfg['id_column']
-        
-        spss = cfg['spss']
-        spss = bool(spss)
         weight_col = cfg['weight_col']
-        if spss == False:
-            # input_filename_l = cfg['input_filename_with_labels']
-            input_filename_v = cfg['input_filename_with_values']
-            input_filename_l_v_map = cfg['input_filename_value_label_map']
-        elif spss == True:
-            input_filename = cfg['input_filename']
-        else:
-            raise Exception(
-                "Configuration variable 'spss' must be set either to True or False (boolean var, " + 
-                "not a string) in config file. Actual value is {}".format(spss)
-            )
+        input_filename_v = cfg['input_filename_with_values']
+        input_filename_l_v_map = cfg['input_filename_value_label_map']            
         both_attribute_and_question = cfg['both_attribute_and_question']
         columns_to_ignore = cfg['columns_to_ignore']
         exclude_from_analysis = cfg['exclude_from_analysis']
         common_string_threshold = cfg['common_string_threshold']
     except KeyError as e:
         raise KeyError("Expected variable {} in config file {} but it wasn't found".format(e, config_file))
-
-if spss:
-    from rpy2.robjects import pandas2ri, r
 
 output_file = '{}_{}_pivoted.csv'.format(year, survey_name.lower().replace(' ', '_'))
 
@@ -69,107 +59,76 @@ output_file = '{}_{}_pivoted.csv'.format(year, survey_name.lower().replace(' ', 
 # FUNCTIONS DEFINITION
 # ============================================= 
 
-# applies to spss file only
-def get_df(filename, val_labels):
-    # This is a really weird workaround used because the pandas2ri method was changing the
-    # data that came back to code N/As incorrectly when value labels were on. So now R 
-    # writes csvs and pandas reads them
-    tmpfile = 'tmp_spss_reader.csv'
-    r_commands = """ 
-    df = suppressWarnings(foreign::read.spss("{}", to.data.frame = TRUE, use.value.labels = {}))
-    write.csv(df, file='{}', row.names=FALSE)
-    """.format(filename, str(val_labels).upper(), tmpfile)
-    r(r_commands)
-    try:
-        d = pd.read_csv(tmpfile, low_memory=False)
-    except Exception as e:
-        print("Reading error for \"{}\". Exiting.".format(tmpfile))
-        print("Error log: {}".format(e))
-        quit()
-    os.remove(tmpfile)
-    return(d)
-
 # get the labels (text) for columns' variables
 def get_variable_labels(filename, varnames):
-    if (spss == True):
-        w = r('as.data.frame(attributes(foreign::read.spss("{}"))["variable.labels"])[,1]'.format(filename))
-        cat = pandas2ri.ri2py(w)
-        return(list(cat))
-    else:
-        # open the file here
-        # index 1 for the second sheet        
-        # l_v_map = pd.read_excel(filename, 1, parse_cols="Name, Label", encoding="iso-8859-1")
+    # open the file here
+    try:
+        # 1 for second sheet of excel file
+        l_v_df = pd.read_excel(filename, 1)
+    except Exception as e:
+        print("Reading error for \"{}\". Exiting.".format(filename))
+        print("Error log: {}".format(e))
+        quit()
 
-        try:
-            # 1 for second sheet of excel file
-            l_v_df = pd.read_excel(filename, 1)
-        except Exception as e:
-            print("Reading error for \"{}\". Exiting.".format(filename))
-            print("Error log: {}".format(e))
-            quit()
+    clean_dataframe(l_v_df)
 
-        clean_dataframe(l_v_df)
+    l_v_map = dict(zip(l_v_df["Name"], l_v_df["Label"]))
+    
+    label_list = []
 
-        l_v_map = dict(zip(l_v_df["Name"], l_v_df["Label"]))
-        
-        label_list = []
-
-        for name in varnames:
-            if name in l_v_map:
-                label_list.append(l_v_map[name])
-            else:
-                label_list.append(name)
-        
-        return label_list
+    for name in varnames:
+        if name in l_v_map:
+            label_list.append(l_v_map[name])
+        else:
+            print((WARNING_TAG + "Missing label for value \"{}\". Use original value instead").format(name))
+            label_list.append(name)
+    
+    return label_list
 
 # obtain the domain for each question
 def get_variable_value_domain(filename):
-    if (spss == True):
-        # do something with spss
-        print("SPSS file")
-    else:
-        try:
-            # 0 for first sheet of excel file
-            range_df = pd.read_excel(filename, 0)
-        except Exception as e:
-            print("Reading error for \"{}\". Exiting.".format(filename))
-            print("Error log: {}".format(e))
+    try:
+        # 0 for first sheet of excel file
+        range_df = pd.read_excel(filename, 0)
+    except Exception as e:
+        print("Reading error for \"{}\". Exiting.".format(filename))
+        print("Error log: {}".format(e))
+        quit()
+
+    range_df.rename(columns=dict(zip(range_df.columns, ["Question", "Value", "Label"])), inplace=True)
+
+    clean_dataframe(range_df)
+
+    domain_map = {}
+
+    curr_question = ""
+
+    for row in range_df.itertuples():
+        index = row[0]
+
+        question = row[1]
+
+        if pd.isnull(question):
+            question = curr_question
+        else:
+            curr_question = question
+
+        question_value = row[2]
+        if pd.isnull(question_value): 
+            continue
+        question_value = int(question_value)
+
+        question_label = row[3]
+        if pd.isnull(question_label):
+            continue
+        
+        if not question in domain_map:                   
+            domain_map[question] = {}
+
+        if question_value in domain_map[question]:
+            print("Duplicated labels for key {} in question {}. Please resolve the issue! Exiting...".format(question_value, question))
             quit()
-
-        range_df.rename(columns=dict(zip(range_df.columns, ["Question", "Value", "Label"])), inplace=True)
-
-        clean_dataframe(range_df)
-
-        domain_map = {}
-
-        curr_question = ""
-
-        for row in range_df.itertuples():
-            index = row[0]
-
-            question = row[1]
-
-            if pd.isnull(question):
-                question = curr_question
-            else:
-                curr_question = question
-
-            question_value = row[2]
-            if pd.isnull(question_value): 
-                continue
-            question_value = int(question_value)
-
-            question_label = row[3]
-            if pd.isnull(question_label):
-                continue
-            
-            if not question in domain_map:                   
-                domain_map[question] = {}
-
-            if question_value in domain_map[question]:
-                print("Duplicated labels for key {} in question {}. Please resolve the issue! Exiting...".format(question_value, question))
-                quit()
-            domain_map[question][question_value] = question_label
+        domain_map[question][question_value] = question_label
 
     return domain_map
 
@@ -218,7 +177,7 @@ def get_normalized_by_median_map(domain, question):
     if domain_length % 2 != 0:
         midValue = domain_array[int(np.floor(domain_length/2))]
     else:
-        midValue = (domain_array[int(np.floor(domain_length/2))] + domain_array[int(np.ceil(domain_length/2))]) / 2
+        midValue = float(domain_array[int(domain_length/2) - 1] + domain_array[int(domain_length/2)]) / 2.0
 
     for i in range(0, domain_length):
         if (domain_array[i] < midValue):
@@ -234,10 +193,10 @@ def check_domain(domain_array, question):
     prev = domain_array[0]
     for item in domain_array[1:]:
         if (item <= 0):
-            print("[WARNING] There is a non-positive value in the domain of question {}".format(question))
+            print((WARNING_TAG + "There is a non-positive value in the domain of question {}").format(question))
             return
         if (item != prev + 1):
-            print("[WARNING] There is discontinuity in the domain of question {}".format(question))
+            print((WARNING_TAG + "There is discontinuity in the domain of question {}").format(question))
             return
         prev = item
 
@@ -274,8 +233,10 @@ def map_value_to_label(vals, column_name):
                 else:
                     item = int(item)
                     if item not in curr_map:                    
-                        print("Do not find a mapping for the current value {}. Use original value instead. This is an error, please recheck your mapping file".format(item))
-                        labels.append(item)                        
+                        print((ERROR_TAG + "Do not find a mapping for the current value {} of column {}. Use original value instead. "
+                            + "Please recheck your mapping file").format(item, column_name))
+                        quit()
+                        # labels.append(item)                     
                     else:
                         labels.append(curr_map[item])
     return labels
@@ -295,31 +256,23 @@ def clean_dataframe(df):
 # MAIN PROCESS
 # ============================================= 
 
-# read in data frame for one with labels, one with values. SPSS no longer works for this script.
-# if spss == True:
-#     df1 = get_df(input_filename, True)
-#     df2 = get_df(input_filename, False)
-# else:
 try:
     value_df = pd.read_csv(input_filename_v, low_memory=False, encoding="iso-8859-1")
 except Exception as e:
-    print("Reading error for \"{}\". Exiting.".format(input_filename_v))
+    print((ERROR_TAG + "Reading error for \"{}\". Exiting.").format(input_filename_v))
     print("Error log: {}".format(e))
     quit()
 
 # obtain all the values of the columns
 varnames = [x for x in value_df.columns if x not in columns_to_ignore]
 
-# print(varnames)
-
 # obtain all the labels of the columns
-if spss == True:
-    varlabels = get_variable_labels(input_filename, [])
-else:
-    # will eventually need to replace this with the actual text of the question
-    varlabels = get_variable_labels(input_filename_l_v_map, varnames)
+varlabels = get_variable_labels(input_filename_l_v_map, varnames)
 
+# create a dictionary that map varnames to varlabels
 varmap = dict(zip(varnames, varlabels))
+
+# obtain domain map for each question, if applicable
 domain_map = get_variable_value_domain(input_filename_l_v_map)
 
 # transposed the needed columns, basically pivotting right here
@@ -393,7 +346,7 @@ clean_dataframe(df)
 attribute_col = []
 for v in tqdm(attributes, desc="Adding attributes"):
     if v not in df.columns:
-        print('Merged data file is missing column {}, and no replacement was found'.format(v))
+        print((WARNING_TAG + "Merged data file is missing column {}, and no replacement was found").format(v))
     else:
         attribute_col.append(v)
 

@@ -36,7 +36,7 @@ spss: False
 #input_filename: 'sample_data.sav'
 
 # UPDATE: the label file is no longer needed
-input_filename_with_labels: 'Test Data/text.csv'
+# input_filename_with_labels: 'Test Data/text.csv'
 
 input_filename_with_values: 'Test Data/value.csv'
 
@@ -44,7 +44,7 @@ input_filename_with_values: 'Test Data/value.csv'
 # a value-label mapping for each question's response (if any). The second sheet 
 # specifies a value-label for each column in the data. The name of each sheet
 # doesn't matter, but the order has to be maintained.
-input_filename_value_label_map: 'Test Data/map.xlsx'
+input_filename_value_label_map: 'Test Data/fault_map.xlsx'
 
 # These are names of variables in the input file that you want to 
 # include in every row of the reshaped long file. They are generally 
