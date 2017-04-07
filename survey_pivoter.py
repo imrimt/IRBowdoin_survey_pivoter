@@ -18,6 +18,7 @@ from collections import defaultdict
 from tqdm import tqdm
 import sys
 import argparse
+import time
 
 # ============================================= 
 # GLOBAL LITERALS
@@ -29,429 +30,456 @@ WARNING_TAG = "[WARNING] "
 # PREPROCESSING FILE
 # ============================================= 
 
-parser = argparse.ArgumentParser()
-parser.add_argument("config_file", help="Path to config yaml file with survey-specific settings " + 
-    "(e.g. config.yml)")
-args = parser.parse_args()
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file", help="Path to config yaml file with survey-specific settings " + 
+        "(e.g. config.yml)")
+    args = parser.parse_args()
 
-config_file = args.config_file
-curr_map = {}
+    config_file = args.config_file
+    curr_map = {}
+    warning_messages = []
 
-with open(config_file, 'r') as ymlfile:
-    try:
-        cfg = yaml.load(ymlfile)
-        year = cfg['year']
-        survey_name = cfg['survey_name']
-        weight_col = cfg['weight_col']
-        input_filename_v = cfg['input_filename_with_values']
-        input_filename_l_v_map = cfg['input_filename_value_label_map']            
-        both_attribute_and_question = cfg['both_attribute_and_question']
-        columns_to_ignore = cfg['columns_to_ignore']
-        exclude_from_analysis = cfg['exclude_from_analysis']
-        common_string_threshold = cfg['common_string_threshold']
-    except KeyError as e:
-        raise KeyError("Expected variable {} in config file {} but it wasn't found".format(e, config_file))
+    with open(config_file, 'r') as ymlfile:
+        try:
+            cfg = yaml.load(ymlfile)
+            year = cfg['year']
+            survey_name = cfg['survey_name']
+            weight_col = cfg['weight_col']
+            input_filename_v = cfg['input_filename_with_values']
+            input_filename_questions_to_text = cfg['input_filename_questions_to_text']
+            input_filename_values_to_labels = cfg['input_filename_values_to_labels']            
+            both_attribute_and_question = cfg['both_attribute_and_question']
+            columns_to_ignore = cfg['columns_to_ignore']
+            exclude_from_domain_analysis = cfg['exclude_from_domain_analysis']
+            common_string_threshold = cfg['common_string_threshold']
+        except KeyError as e:
+            raise KeyError("Expected variable {} in config file {} but it wasn't found".format(e, config_file))
 
-output_file = '{}_{}_pivoted.csv'.format(year, survey_name.lower().replace(' ', '_'))
+    exclude_from_domain_analysis = [item.lower() for item in exclude_from_domain_analysis]
+    output_file = '{}_{}_pivoted.xlsx'.format(year, survey_name.lower().replace(' ', '_'))
 
 
-# =============================================
-# FUNCTIONS DEFINITION
-# ============================================= 
+    # =============================================
+    # FUNCTIONS DEFINITION
+    # ============================================= 
 
-# get the labels (text) for columns' variables
-def get_variable_labels(filename, varnames):
-    # open the file here
-    try:
-        # 1 for second sheet of excel file
-        l_v_df = pd.read_excel(filename, 1)
-    except Exception as e:
-        print("Reading error for \"{}\". Exiting.".format(filename))
-        print("Error log: {}".format(e))
-        quit()
-
-    clean_dataframe(l_v_df)
-
-    l_v_map = dict(zip(l_v_df["Name"], l_v_df["Label"]))
-    
-    label_list = []
-
-    for name in varnames:
-        if name in l_v_map:
-            label_list.append(l_v_map[name])
-        else:
-            print((WARNING_TAG + "Missing label for value \"{}\". Use original value instead").format(name))
-            label_list.append(name)
-    
-    return label_list
-
-# obtain the domain for each question
-def get_variable_value_domain(filename):
-    try:
-        # 0 for first sheet of excel file
-        range_df = pd.read_excel(filename, 0)
-    except Exception as e:
-        print("Reading error for \"{}\". Exiting.".format(filename))
-        print("Error log: {}".format(e))
-        quit()
-
-    range_df.rename(columns=dict(zip(range_df.columns, ["Question", "Value", "Label"])), inplace=True)
-
-    clean_dataframe(range_df)
-
-    domain_map = {}
-
-    curr_question = ""
-
-    for row in range_df.itertuples():
-        index = row[0]
-
-        question = row[1]
-
-        if pd.isnull(question):
-            question = curr_question
-        else:
-            curr_question = question
-
-        question_value = row[2]
-        if pd.isnull(question_value): 
-            continue
-        question_value = int(question_value)
-
-        question_label = row[3]
-        if pd.isnull(question_label):
-            continue
-        
-        if not question in domain_map:                   
-            domain_map[question] = {}
-
-        if question_value in domain_map[question]:
-            print("Duplicated labels for key {} in question {}. Please resolve the issue! Exiting...".format(question_value, question))
+    # get the labels (text) for columns' variables
+    def get_variable_labels(filename, varnames):
+        # open the file here
+        try:
+            l_v_df = pd.read_excel(filename)
+        except Exception as e:
+            print("Reading error for \"{}\". Exiting.".format(filename))
+            print("Error log: {}".format(e))
             quit()
-        domain_map[question][question_value] = question_label
 
-    return domain_map
+        clean_dataframe(l_v_df)
 
-# Anything above the median should get the value of 0, below of 1. If the median can be computed (
-# i.e there are odd number of elements in the domain), then the median has value of 0.5.
-def get_count_neg_map(domain, question):
-    domain_length = len(domain)
-    domain_array = list(domain.keys())
-    domain_array.sort()
-    map_result = {}
+        l_v_map = dict(zip(l_v_df["Name"], l_v_df["Label"]))
+        
+        label_list = []
 
-    if domain_length == 0:
-        return map_result
+        for name in varnames:
+            if name in l_v_map:
+                label_list.append(l_v_map[name])
+            else:
+                print((WARNING_TAG + "Missing label for value \"{}\". Use original value instead").format(name))
+                label_list.append(name)
+        
+        return label_list
 
-    check_domain(domain_array, question)
+    # obtain the domain for each question
+    def get_variable_value_domain(filename):
+        try:
+            range_df = pd.read_excel(filename)
+        except Exception as e:
+            print("Reading error for \"{}\". Exiting.".format(filename))
+            print("Error log: {}".format(e))
+            quit()
 
-    # below median --> 1
-    for i in range(0, int(np.floor(domain_length/2))):
-        map_result[str(domain_array[i])] = 1
+        range_df.rename(columns=dict(zip(range_df.columns, ["Question", "Value", "Label"])), inplace=True)
 
-    # above median --> 0
-    for i in range(int(np.ceil(domain_length/2)), domain_length):
-        map_result[str(domain_array[i])] = 0
+        clean_dataframe(range_df)
 
-    # if central point exists --> 0.5
-    if domain_length % 2 != 0:
-        map_result[str(domain_array[int(np.floor(domain_length/2))])] = 0.5
+        domain_map = {}
 
-    return map_result
+        curr_question = ""
 
-# Shift all values by the median. The median is computed by taking the middle value (averages for 
-# even length). Then, all value is offset by the value of the median, rounding up to the nearest 
-# integer (in magnitude). 
-def get_normalized_by_median_map(domain, question):
-    domain_length = len(domain)
-    domain_array = list(domain.keys())
-    domain_array.sort()
-    map_result = {}
+        for row in range_df.itertuples():
+            index = row[0]
 
-    if domain_length == 0:
-        return map_result
+            question = row[1]
 
-    check_domain(domain_array, question)
+            if pd.isnull(question):
+                question = curr_question
+            else:
+                curr_question = question
 
-    # compute median
-    if domain_length % 2 != 0:
-        midValue = domain_array[int(np.floor(domain_length/2))]
-    else:
-        midValue = float(domain_array[int(domain_length/2) - 1] + domain_array[int(domain_length/2)]) / 2.0
+            question_value = row[2]
+            if pd.isnull(question_value): 
+                continue
+            question_value = int(question_value)
 
-    for i in range(0, domain_length):
-        if (domain_array[i] < midValue):
-            map_result[str(domain_array[i])] = str(int(np.floor(domain_array[i] - midValue)))
-        elif (domain_array[i] > midValue):
-            map_result[str(domain_array[i])] = str(int(np.ceil(domain_array[i] - midValue)))
-        else:
+            question_label = row[3]
+            if pd.isnull(question_label):
+                continue
+            
+            if not question in domain_map:                   
+                domain_map[question] = {}
+
+            if question_value in domain_map[question]:
+                print("Duplicated labels for key {} in question {}. Please resolve the issue! Exiting...".format(question_value, question))
+                quit()
+            domain_map[question][question_value] = question_label
+
+        return domain_map
+
+    # Anything above the median should get the value of 0, below of 1. If the median can be computed (
+    # i.e there are odd number of elements in the domain), then the median has value of 0.5.
+    def get_count_neg_map(domain_array):
+        domain_length = len(domain_array)
+        map_result = {}
+
+        if (domain_length == 0):
+            return map_result
+
+        # below median --> 1
+        for i in range(0, int(np.floor(domain_length/2))):
+            map_result[str(domain_array[i])] = 1
+
+        # above median --> 0
+        for i in range(int(np.ceil(domain_length/2)), domain_length):
             map_result[str(domain_array[i])] = 0
 
-    return map_result
+        # if central point exists --> 0.5
+        if domain_length % 2 != 0:
+            map_result[str(domain_array[int(np.floor(domain_length/2))])] = 0.5
 
-def check_domain(domain_array, question):
-    prev = domain_array[0]
-    for item in domain_array[1:]:
-        if (item <= 0):
-            print((WARNING_TAG + "There is a non-positive value in the domain of question {}").format(question))
-            return
-        if (item != prev + 1):
-            print((WARNING_TAG + "There is discontinuity in the domain of question {}").format(question))
-            return
-        prev = item
+        return map_result
 
-# update group_text according to their group name using the group map
-def update_group_text(group_name):
-    return group_map[group_name]
+    # Shift all values by the median. The median is computed by taking the middle value (averages for 
+    # even length). Then, all value is offset by the value of the median, rounding up to the nearest 
+    # integer (in magnitude). 
+    def get_normalized_by_median_map(domain_array):
+        
+        map_result = {}
+        domain_length = len(domain_array)
 
-# find the largest common string from the beginninng of sa and sb
-def common_start(sa, sb):
-    def _iter():
-        for a, b in zip(sa, sb):
-            if a == b:
-                yield a
+        if (domain_length == 0):
+            return map_result
+
+        # compute median
+        if domain_length % 2 != 0:
+            midValue = domain_array[int(np.floor(domain_length/2))]
+        else:
+            midValue = float(domain_array[int(domain_length/2) - 1] + domain_array[int(domain_length/2)]) / 2.0
+
+        for i in range(0, domain_length):
+            if (domain_array[i] < midValue):
+                map_result[str(domain_array[i])] = str(int(np.floor(domain_array[i] - midValue)))
+            elif (domain_array[i] > midValue):
+                map_result[str(domain_array[i])] = str(int(np.ceil(domain_array[i] - midValue)))
             else:
+                map_result[str(domain_array[i])] = 0
+
+        return map_result
+
+    def check_domain(domain_array, question):
+        prev = domain_array[0]
+        for item in domain_array[1:]:
+            if (item <= 0):
+                # tqdm.write((WARNING_TAG + "There is a non-positive value in the domain of question {}").format(question))
+                warning_messages.append((WARNING_TAG + "There is a non-positive value in the domain of question {}").format(question))
                 return
+            if (item != prev + 1):
+                # tqdm.write((WARNING_TAG + "There is discontinuity in the domain of question {}").format(question))
+                warning_messages.append((WARNING_TAG + "There is discontinuity in the domain of question {}").format(question))
+                return
+            prev = item
 
-    return ''.join(_iter())
+    # update group_text according to their group name using the group map
+    def update_group_text(group_name):
+        return group_map[group_name]
 
-# create a labels series that has a corresponding label to
-# every value in vals. If there is no mapping, then keep 
-# vals as original
-def map_value_to_label(vals, column_name):
-    labels = []
-    if column_name in domain_map:
-        curr_map = domain_map[column_name]
-        curr_list = list(curr_map.keys())
-        
-        if not curr_map:
-            return labels
-        else:            
-            for item in vals:
-                if not item.isdigit() or pd.isnull(item):
-                    labels.append(item)
+    # find the largest common string from the beginninng of sa and sb
+    def common_start(sa, sb):
+        def _iter():
+            for a, b in zip(sa, sb):
+                if a == b:
+                    yield a
                 else:
-                    item = int(item)
-                    if item not in curr_map:                    
-                        print((ERROR_TAG + "Do not find a mapping for the current value {} of column {}. Use original value instead. "
-                            + "Please recheck your mapping file").format(item, column_name))
-                        quit()
-                        # labels.append(item)                     
-                    else:
-                        labels.append(curr_map[item])
-    return labels
+                    return
 
-# clean the dataframe for \n, \r and \t characters
-# Note: for some reason, we have to use str.replace here instead 
-# of the df.replace function, as it doesn't replace the special 
-# characters
-def clean_dataframe(df):
-    for v in df.select_dtypes([np.object]).columns[1:]:
-        df[v] = df[v].astype(str)
-        df[v] = (df[v]).str.replace('\r', ', ')
-        df[v] = (df[v]).str.replace('\t', ', ')
-        df[v] = (df[v]).str.replace('\n', ', ')
+        return ''.join(_iter())
 
-# =============================================
-# MAIN PROCESS
-# ============================================= 
-
-try:
-    value_df = pd.read_csv(input_filename_v, low_memory=False, encoding="iso-8859-1")
-except Exception as e:
-    print((ERROR_TAG + "Reading error for \"{}\". Exiting.").format(input_filename_v))
-    print("Error log: {}".format(e))
-    quit()
-
-# obtain all the values of the columns
-varnames = [x for x in value_df.columns if x not in columns_to_ignore]
-
-# obtain all the labels of the columns
-varlabels = get_variable_labels(input_filename_l_v_map, varnames)
-
-# create a dictionary that map varnames to varlabels
-varmap = dict(zip(varnames, varlabels))
-
-# obtain domain map for each question, if applicable
-domain_map = get_variable_value_domain(input_filename_l_v_map)
-
-# transposed the needed columns, basically pivotting right here
-new_df_cols = [value_df[col] for col in varnames]
-df = pd.DataFrame(new_df_cols).T
-
-# create the attributes list here. We also want to rename the attribute  column from their values 
-# to their labels (texts) in the output file. The renamed columns' name will be stored in 
-# attributes. We store the original name of the first occurence of any new name in
-# attribute_rename_backward.
-attributes = []
-dont_pivot = []
-attributes_rename = {}
-attributes_rename_backward = {}
-
-for name in tqdm(varnames, desc="Renaming Columns"):
-    if not name.startswith("Q"):        
-        if name in varmap:
-            rename = varmap[name]
-
-            # if there is a duplicate in the label of a name
-            if rename in attributes_rename_backward:
-
-                # then add an extension that indicates its original name to the new name
-                newname = "{} ({})".format(rename, name)
-
-                # update the first occurrence of the new name. If this process has 
-                # already happened, then first_occ_name should return an empty string
-                # so we only do the process once
-                first_occ_name = attributes_rename_backward[rename]
-                if first_occ_name:
-                    index = attributes.index(rename)
-                    first_occ_rename = "{} ({})".format(rename, first_occ_name)
-                    attributes[index] = first_occ_rename                    
-                    attributes_rename[first_occ_name] = first_occ_rename
-
-                    # change the original name that corresponds to the first occurence of new name
-                    # to empty string to indicate that we shouldn't do this updating process more 
-                    # than one                    
-                    attributes_rename_backward[rename] = ""
-
-                rename = newname
-
-            else:
-                # save the original name that corresponds to the first occurence of new name. 
-                # This value will be changed to empty string if we ever encounter this new 
-                # name again.
-                attributes_rename_backward[rename] = name
+    # create a labels series that has a corresponding label to
+    # every value in vals. If there is no mapping, then keep 
+    # vals as original
+    def map_value_to_label(vals, column_name):
+        labels = []
+        if column_name in domain_map:
+            curr_map = domain_map[column_name]
+            curr_list = list(curr_map.keys())
             
-            attributes.append(rename)
-            attributes_rename[name] = rename
+            if not curr_map:
+                return labels
+            else:            
+                for item in vals:
+                    if not item.isdigit() or pd.isnull(item):
+                        labels.append(item)
+                    else:
+                        item = int(item)
+                        if item not in curr_map:                    
+                            print((ERROR_TAG + "Do not find a mapping for the current value {} of column {}. Use original value instead. "
+                                + "Please recheck your mapping file").format(item, column_name))
+                            quit()
+                            # labels.append(item)                     
+                        else:
+                            labels.append(curr_map[item])
+        return labels
 
-        # we do not pivot the attribute columns
-        # unless we want certain columns to be pivoted as well
-        if not name in both_attribute_and_question:
-            dont_pivot.append(name)
+    # clean the dataframe for \n, \r and \t characters
+    # Note: for some reason, we have to use str.replace here instead 
+    # of the df.replace function, as it doesn't replace the special 
+    # characters
+    def clean_dataframe(df):
+        for v in df.select_dtypes([np.object]).columns[1:]:
+            df[v] = df[v].astype(str)
+            df[v] = (df[v]).str.replace('\r', ', ')
+            df[v] = (df[v]).str.replace('\t', ', ')
+            df[v] = (df[v]).str.replace('\n', ', ')
 
-# rename the columns that are used as attributes
-df.rename(columns=attributes_rename, inplace=True)
-df_cols = df.columns
+    # =============================================
+    # MAIN PROCESS
+    # ============================================= 
 
-# If weight column specified above doesn't exist, 
-# create it and set all weights to 1
-if weight_col not in df_cols:
-    df[weight_col] = 1
+    try:
+        value_df = pd.read_excel(input_filename_v)
+    except Exception as e:
+        print((ERROR_TAG + "Reading error for \"{}\". Exiting.").format(input_filename_v))
+        print("Error log: {}".format(e))
+        quit()
 
-clean_dataframe(df)
+    # obtain all the variable names of the columns
+    varnames = [x for x in value_df.columns if x not in columns_to_ignore]
 
-# identify the necessary columns to keep as column as well. If the columns
-# have numerical/categorical data, it will be suffixed with "_l"
-attribute_col = []
-for v in tqdm(attributes, desc="Adding attributes"):
-    if v not in df.columns:
-        print((WARNING_TAG + "Merged data file is missing column {}, and no replacement was found").format(v))
-    else:
-        attribute_col.append(v)
+    # obtain all the labels of the columns
+    varlabels = get_variable_labels(input_filename_questions_to_text, varnames)
 
-# construct the new data frame with the right format        
-dataframes = []
-group_map = {}
+    # create a dictionary that map varnames to varlabels
+    varmap = dict(zip(varnames, varlabels))
 
-# print(attribute_col)
+    # obtain domain map for each question, if applicable
+    domain_map = get_variable_value_domain(input_filename_values_to_labels)
 
-for v in tqdm(varnames, desc="Pivoting"):
-    if v not in dont_pivot:
+    # transposed the needed columns, basically pivotting right here
+    new_df_cols = [value_df[col] for col in varnames]
+    df = pd.DataFrame(new_df_cols).T
 
-        # order of columns
-        pivoted = pd.DataFrame(columns = ['survey_name', 'year'] + attribute_col +
-                               ['question_group_varname', 'question_group_text', 'question_varname', 
-                               'question_text', 'answer_value', 'answer_text', 
-                               'count_negative', 'normalized_by_median', 'weight'])
+    # create the attributes list here. We also want to rename the attribute  column from their values 
+    # to their labels (texts) in the output file. The renamed columns' name will be stored in 
+    # attributes. We store the original name of the first occurence of any new name in
+    # attribute_rename_backward.
+    attributes = []
+    dont_pivot = []
+    attributes_rename = {}
+    attributes_rename_backward = {}
 
+    for name in tqdm(varnames, desc="Renaming Columns"):
+        if not name.startswith("Q"):        
+            if name in varmap:
+                rename = varmap[name]
 
-        # change v to be the renamed value if v is a pivoted attribute
-        if v in both_attribute_and_question:
-            v = attributes_rename[v]
+                # if there is a duplicate in the label of a name
+                if rename in attributes_rename_backward:
 
-        vals = df[v]
+                    # then add an extension that indicates its original name to the new name
+                    newname = "{} ({})".format(rename, name)
 
-        temp_list = map_value_to_label(vals, v)
-        labels = vals if not temp_list else pd.Series(temp_list)
+                    # update the first occurrence of the new name. If this process has 
+                    # already happened, then first_occ_name should return an empty string
+                    # so we only do the process once
+                    first_occ_name = attributes_rename_backward[rename]
+                    if first_occ_name:
+                        index = attributes.index(rename)
+                        first_occ_rename = "{} ({})".format(rename, first_occ_name)
+                        attributes[index] = first_occ_rename                    
+                        attributes_rename[first_occ_name] = first_occ_rename
 
-        pivoted['answer_value'] = vals
-        pivoted['answer_text'] = labels
+                        # change the original name that corresponds to the first occurence of new name
+                        # to empty string to indicate that we shouldn't do this updating process more 
+                        # than one                    
+                        attributes_rename_backward[rename] = ""
 
-        # Figure out which indices to exclude from analysis. NOT SURE WHAT THIS IS DOING?
-        if len(labels.dropna()) > 0:
-            exclude = pd.Series(False, index=np.arange(0, len(labels)))
-            exclude[(labels.notnull()) & (labels.dropna().astype(str).str.lower().isin(exclude_from_analysis))] = True
+                    rename = newname
 
-        # Now figure out domain excluding 'exclude from analysis' answers using the domain_map built 
-        # earlier
-        # domain = list(pd.unique(vals[(labels.notnull()) & (~labels.isin(exclude_from_analysis))].dropna().values))
-        if v in domain_map:                
-            domain = domain_map[v]
+                else:
+                    # save the original name that corresponds to the first occurence of new name. 
+                    # This value will be changed to empty string if we ever encounter this new 
+                    # name again.
+                    attributes_rename_backward[rename] = name
+                
+                attributes.append(rename)
+                attributes_rename[name] = rename
+
+            # we do not pivot the attribute columns
+            # unless we want certain columns to be pivoted as well
+            if not name in both_attribute_and_question:
+                dont_pivot.append(name)
+
+    # rename the columns that are used as attributes
+    df.rename(columns=attributes_rename, inplace=True)
+    df_cols = df.columns
+
+    # If weight column specified above doesn't exist, 
+    # create it and set all weights to 1
+    if weight_col not in df_cols:
+        df[weight_col] = 1
+
+    clean_dataframe(df)
+
+    # identify the necessary columns to keep as column as well. If the columns
+    # have numerical/categorical data, it will be suffixed with "_l"
+    attribute_col = []
+    for v in tqdm(attributes, desc="Adding attributes"):
+        if v not in df_cols:
+            # print((WARNING_TAG + "Merged data file is missing column {}, and no replacement was found").format(v))
+            warning_messages.append((WARNING_TAG + "Merged data file is missing column {}, and no replacement was found").format(v))
         else:
-            domain = {}
-        # domain.sort()
-        negative_map = get_count_neg_map(domain, v)
-        normalize_map = get_normalized_by_median_map(domain, v)
-        
-        pivoted.count_negative = 0
-        pivoted.normalized_by_median = 0
+            attribute_col.append(v)
 
-        if len(negative_map) > 0:
-            pivoted['count_negative'] = vals.replace(negative_map)
+    # flush warning messages
+    for warning in warning_messages:
+        print(warning)
+    warning_messages[:] = []
 
-        if len(normalize_map) > 0:
-            pivoted['normalized_by_median'] = vals.replace(normalize_map)
+    # construct the new data frame with the right format        
+    dataframes = []
+    group_map = {}
 
-        pivoted['survey_name'] = survey_name
-        pivoted['year'] = year
-        # pivoted['id'] = df[id_col]
+    # print(attribute_col)
 
-        question_text = v if v in attributes else varmap[v]
+    for v in tqdm(varnames, desc="Pivoting"):
+        if v not in dont_pivot:
 
-        # create group if there is a '_'
-        if '_' in v:
-            group_name_var = v[:v.find('_')]
-        else:
-            group_name_var = v
+            # order of columns
+            pivoted = pd.DataFrame(columns = ['survey_name', 'year'] + attribute_col +
+                                   ['question_group_varname', 'question_group_text', 'question_varname', 
+                                   'question_text', 'answer_value', 'answer_text', 
+                                   'count_negative', 'normalized_by_median', 'weight'])
 
-        # if there is no mapping in group_map, implying that this is the first 
-        # occurrence of group_name
-        if group_name_var not in group_map:
-            group_map[group_name_var] = question_text
-            group_name_text = question_text
+            # change v to be the renamed value if v is a pivoted attribute
+            if v in both_attribute_and_question:
+                v = attributes_rename[v]
 
-        # there is a mapping, so update the mapped value string by finding
-        # the most common string with the current value. If the common string 
-        # is less than threshold number of characters, then use group_name_var
-        # as the text
-        else:
-            common_string = common_start(question_text, group_map[group_name_var])
-            if (len(common_string) >= common_string_threshold):
-                group_name_text = common_string
+            vals = df[v]
+
+            temp_list = map_value_to_label(vals, v)
+            labels = vals if not temp_list else pd.Series(temp_list)
+
+            pivoted['answer_value'] = vals
+            pivoted['answer_text'] = labels
+
+            if v in domain_map:                
+                domain = domain_map[v]
             else:
-                group_name_text = group_name_var
+                domain = {}
 
-            group_map[group_name_var] = group_name_text
+            # make sure the exclude certain responses specified by the user from the 
+            # domain analysis
+            format_domain = {k:v for k,v in domain.items() if v.lower() not in exclude_from_domain_analysis}
 
-        pivoted['question_varname'] = v
-        pivoted['question_text'] = question_text
-        pivoted['question_group_varname'] = group_name_var
-        pivoted['question_group_text'] = group_name_text
-        pivoted['weight'] = df[[weight_col]]
-        pivoted[attribute_col] = df[attribute_col]
-        dataframes.append(pivoted)
+            # convert the domain to a sorted domain_array
+            domain_array = list(format_domain.keys())
 
-# parse through the data frame one more time to update group_text
-for row in dataframes:
-    row['question_group_text'] = row['question_group_varname'].apply(update_group_text)
+            # if a domain exists
+            if domain_array:
+                domain_array.sort()
+                check_domain(domain_array, v)
+            
+                negative_map = get_count_neg_map(domain_array)
+                normalize_map = get_normalized_by_median_map(domain_array)
+                
+                pivoted.count_negative = 0
+                pivoted.normalized_by_median = 0
 
-# =============================================
-# FINAL PRODUCT
-# ============================================= 
-final_product = pd.concat(dataframes)
-final_product = final_product[final_product['answer_value'].notnull()]
-final_product = final_product[final_product['answer_value'].str.strip() != '']
-final_product = final_product.sort_values(['year', 'survey_name', 'question_varname'])
-final_product.to_csv(output_file, index=False)
-print('Reshaped output file was successfully written to {}'.format(output_file))
+                if len(negative_map) > 0:
+                    pivoted['count_negative'] = vals.replace(negative_map)
+
+                if len(normalize_map) > 0:
+                    pivoted['normalized_by_median'] = vals.replace(normalize_map)
+
+            pivoted['survey_name'] = survey_name
+            pivoted['year'] = year
+
+            question_text = v if v in attributes else varmap[v]
+
+            # create group if there is a '_'
+            if '_' in v:
+                group_name_var = v[:v.find('_')]
+            else:
+                group_name_var = v
+
+            # if there is no mapping in group_map, implying that this is the first 
+            # occurrence of group_name
+            if group_name_var not in group_map:
+                group_map[group_name_var] = question_text
+                group_name_text = question_text
+
+            # there is a mapping, so update the mapped value string by finding
+            # the most common string with the current value. If the common string 
+            # is less than threshold number of characters, then use group_name_var
+            # as the text
+            else:
+                common_string = common_start(question_text, group_map[group_name_var])
+                if (len(common_string) >= common_string_threshold):
+                    group_name_text = common_string
+                else:
+                    group_name_text = group_name_var
+
+                group_map[group_name_var] = group_name_text
+
+            pivoted['question_varname'] = v
+            pivoted['question_text'] = question_text
+            pivoted['question_group_varname'] = group_name_var
+            pivoted['question_group_text'] = group_name_text
+            pivoted['weight'] = df[[weight_col]]
+            pivoted[attribute_col] = df[attribute_col]
+            dataframes.append(pivoted)
+
+    # parse through the data frame one more time to update group_text
+    for row in dataframes:
+        row['question_group_text'] = row['question_group_varname'].apply(update_group_text)
+
+    # flush out warning messages
+    for warning in warning_messages:
+        print(warning)
+    warning_messages[:] = []
+
+    # =============================================
+    # FINAL PRODUCT
+    # ============================================= 
+    final_product = pd.concat(dataframes)
+    final_product = final_product[final_product['answer_value'].notnull()]
+    final_product = final_product[final_product['answer_value'].str.strip() != '']
+    final_product = final_product.sort_values(['year', 'survey_name', 'question_varname'])
+
+    # save as excel (smaller file size, longer write time)
+    writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
+    pd.formats.format.header_style = None
+    final_product.to_excel(writer, startcol=0, startrow=0, index=False, sheet_name="Sheet1")
+    writer.save()
+
+    # save as csv (larger file size, faster write time)
+    # final_product.to_csv(output_file, index=False)
+
+    print('------------------------------------------------------------------')
+    print('Reshaped output file was successfully written to {}'.format(output_file))
+
+if __name__ == "__main__":
+    start_time = time.time()
+    main()
+    print("[TOTAL RUNNING TIME] : {} seconds".format(time.time() - start_time))
+
+    

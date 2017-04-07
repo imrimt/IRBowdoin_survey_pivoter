@@ -44,3 +44,10 @@ E.g:
 - Raise error when a response mapping is missing in a question's domain, but the response appears in the input file.
 - Clean up ReadME file, and split the *software_updates.md* file into its separate file.
 - Finish testing with small data.
+
+### 4/7/2017
+- Separate mapping files into 2 different files. So now the config file will require 3 input files.
+- Simplify warning messages, remove duplicates, and only flush them out after the process has finished.
+- Require all inputs and outputs to be xlsx files.
+- Clean up config file, remove unnecessary fields.
+- Allow the user to specify certain non-case-sensitive text responses in the config file that should not be included in the domain analysis/computation.
