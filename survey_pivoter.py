@@ -146,15 +146,18 @@ def main():
 
         # below median --> 1
         for i in range(0, int(np.floor(domain_length/2))):
-            map_result[str(domain_array[i])] = 1
+            # map_result[str(domain_array[i])] = 1
+            map_result[int(domain_array[i])] = 1
 
         # above median --> 0
         for i in range(int(np.ceil(domain_length/2)), domain_length):
-            map_result[str(domain_array[i])] = 0
+            # map_result[str(domain_array[i])] = 0
+            map_result[int(domain_array[i])] = 0
 
         # if central point exists --> 0.5
         if domain_length % 2 != 0:
-            map_result[str(domain_array[int(np.floor(domain_length/2))])] = 0.5
+            # map_result[str(domain_array[int(np.floor(domain_length/2))])] = 0.5
+            map_result[int(domain_array[int(np.floor(domain_length/2))])] = 0.5
 
         return map_result
 
@@ -175,13 +178,21 @@ def main():
         else:
             midValue = float(domain_array[int(domain_length/2) - 1] + domain_array[int(domain_length/2)]) / 2.0
 
+        # for i in range(0, domain_length):
+        #     if (domain_array[i] < midValue):
+        #         map_result[str(domain_array[i])] = str(int(np.floor(domain_array[i] - midValue)))
+        #     elif (domain_array[i] > midValue):
+        #         map_result[str(domain_array[i])] = str(int(np.ceil(domain_array[i] - midValue)))
+        #     else:
+        #         map_result[str(domain_array[i])] = 0
+
         for i in range(0, domain_length):
             if (domain_array[i] < midValue):
-                map_result[str(domain_array[i])] = str(int(np.floor(domain_array[i] - midValue)))
+                map_result[int(domain_array[i])] = int(np.floor(domain_array[i] - midValue))
             elif (domain_array[i] > midValue):
-                map_result[str(domain_array[i])] = str(int(np.ceil(domain_array[i] - midValue)))
+                map_result[int(domain_array[i])] = int(np.ceil(domain_array[i] - midValue))
             else:
-                map_result[str(domain_array[i])] = 0
+                map_result[int(domain_array[i])] = 0
 
         return map_result
 
@@ -405,10 +416,10 @@ def main():
                 pivoted.normalized_by_median = 0
 
                 if len(negative_map) > 0:
-                    pivoted['count_negative'] = vals.replace(negative_map)
+                    pivoted['count_negative'] = (vals.astype(float)).dropna().astype(int, casting="safe").replace(negative_map)
 
                 if len(normalize_map) > 0:
-                    pivoted['normalized_by_median'] = vals.replace(normalize_map)
+                    pivoted['normalized_by_median'] = (vals.astype(float)).dropna().astype(int, casting="safe").replace(normalize_map)
 
             pivoted['survey_name'] = survey_name
             pivoted['year'] = year
