@@ -300,7 +300,7 @@ def main():
     for name in tqdm(varnames, desc="Renaming Columns"):
         if not name.startswith("Q"):        
             if name in varmap:
-                rename = varmap[name]
+                rename = "Attribute - {}".format(varmap[name])
 
                 # if there is a duplicate in the label of a name
                 if rename in attributes_rename_backward:
@@ -375,10 +375,11 @@ def main():
         if v not in dont_pivot:
 
             # order of columns
-            pivoted = pd.DataFrame(columns = ['survey_name', 'year'] + attribute_col +
-                                   ['question_group_varname', 'question_group_text', 'question_varname', 
-                                   'question_text', 'answer_value', 'answer_text', 
-                                   'count_negative', 'normalized_by_median', 'weight'])
+            pivoted = pd.DataFrame(columns = ['Survey Name', 'Year'] + attribute_col +
+                                   ['Question - Group ID', 'Question - Group Text', 'Question - ID', 
+                                   'Question - Text', 'Response - Value', 'Response - Text', 
+                                   'Property - Count Negative', 'Property - Normalized By Median', 
+                                   'Property - Weight'])
 
             # change v to be the renamed value if v is a pivoted attribute
             if v in both_attribute_and_question:
@@ -389,8 +390,8 @@ def main():
             temp_list = map_value_to_label(vals, v)
             labels = vals if not temp_list else pd.Series(temp_list)
 
-            pivoted['answer_value'] = vals
-            pivoted['answer_text'] = labels
+            pivoted['Response - Value'] = vals
+            pivoted['Response - Text'] = labels
 
             if v in domain_map:                
                 domain = domain_map[v]
@@ -416,13 +417,13 @@ def main():
                 pivoted.normalized_by_median = 0
 
                 if len(negative_map) > 0:
-                    pivoted['count_negative'] = (vals.astype(float)).dropna().astype(int, casting="safe").replace(negative_map)
+                    pivoted['Property - Count Negative'] = (vals.astype(float)).dropna().astype(int, casting="safe").replace(negative_map)
 
                 if len(normalize_map) > 0:
-                    pivoted['normalized_by_median'] = (vals.astype(float)).dropna().astype(int, casting="safe").replace(normalize_map)
+                    pivoted['Property - Normalized By Median'] = (vals.astype(float)).dropna().astype(int, casting="safe").replace(normalize_map)
 
-            pivoted['survey_name'] = survey_name
-            pivoted['year'] = year
+            pivoted['Survey Name'] = survey_name
+            pivoted['Year'] = year
 
             question_text = v if v in attributes else varmap[v]
 
@@ -451,17 +452,17 @@ def main():
 
                 group_map[group_name_var] = group_name_text
 
-            pivoted['question_varname'] = v
-            pivoted['question_text'] = question_text
-            pivoted['question_group_varname'] = group_name_var
-            pivoted['question_group_text'] = group_name_text
-            pivoted['weight'] = df[[weight_col]]
+            pivoted['Question - ID'] = v
+            pivoted['Question - Text'] = question_text
+            pivoted['Question - Group ID'] = group_name_var
+            pivoted['Question - Group Text'] = group_name_text
+            pivoted['Property - Weight'] = df[[weight_col]]
             pivoted[attribute_col] = df[attribute_col]
             dataframes.append(pivoted)
 
     # parse through the data frame one more time to update group_text
     for row in dataframes:
-        row['question_group_text'] = row['question_group_varname'].apply(update_group_text)
+        row['Question - Group Text'] = row['Question - Group ID'].apply(update_group_text)
 
     # flush out warning messages
     for warning in warning_messages:
@@ -472,9 +473,10 @@ def main():
     # FINAL PRODUCT
     # ============================================= 
     final_product = pd.concat(dataframes)
-    final_product = final_product[final_product['answer_value'].notnull()]
-    final_product = final_product[final_product['answer_value'].str.strip() != '']
-    final_product = final_product.sort_values(['year', 'survey_name', 'question_varname'])
+    final_product = final_product[final_product['Response - Text'].notnull()]
+    final_product = final_product[final_product['Response - Value'].str.strip() != '']
+    final_product = final_product.replace("#NULL!", "No response")
+    final_product = final_product.sort_values(['Year', 'Survey Name', 'Question - ID'])
 
     # save as excel (smaller file size, longer write time)
     writer = pd.ExcelWriter(output_file, engine='xlsxwriter')
