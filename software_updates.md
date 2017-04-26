@@ -52,6 +52,12 @@ E.g:
 - Clean up config file, remove unnecessary fields.
 - Allow the user to specify certain non-case-sensitive text responses in the config file that should not be included in the domain analysis/computation.
 
-### 4/12/2017:
+### 4/12/2017
 - To-do: Come up with new names for each column
 - Rerun the tests to make sure that the script is still behaving correctly after the updates on 4/7.
+
+### 4/19/2017 - 4/26/2017
+- Change the column names, and fix that only add the "Attribute" tag to the column name, not to the value/text fields in the data (when an attribute is treated as a question).
+- Remove group text from questions.
+- Remove the hyphen from question group text if it is the last or first character.
+- Remove the ellipses from question text if it's the first character. Any non-digit or non-alphabetic should be removed as well. 

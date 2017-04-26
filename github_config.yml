@@ -20,18 +20,20 @@ input_filename_with_values: 'GitHub Data/value.xlsx'
 input_filename_questions_to_text: 'GitHub Data/q_to_t_map.xlsx'
 input_filename_values_to_labels: 'GitHub Data/v_to_l_map.xlsx'
 
-# These are names of variables in the input file that you want to 
-# include in every row of the reshaped long file. They are generally 
+# These are ID of attributes in the input file that you want to 
+# treat as questions in the output file. They are generally 
 # metadata, or things you want to analyze the survey by. You don't
 # need to include your weight columns here, since they'll
-# automatically be included
+# automatically be included.
 both_attribute_and_question: [
     'V1',
     'V2'
 ]
 
 # These are columns that you want to completely ignore from your data,
-# so these columns will not show up in the output file.
+# so these columns will not show up in the output file. Make sure to 
+# use the columns' name in the original input file, not its textual 
+# name.
 columns_to_ignore: [
   'LocationAccuracy',
   'LocationLongitude',
@@ -47,4 +49,4 @@ common_string_threshold: 4
 # excluded from the domain analysis, as sometimes NA answers will be 
 # assigned a value. This will allow the domain computation to be performed 
 # more correctly.
-exclude_from_domain_analysis: ['not applicable', 'NA', 'not a response']
+exclude_from_domain_analysis: ['Not applicable', 'NA', 'Not a response']

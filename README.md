@@ -43,7 +43,7 @@ The attribute columns refer to any non-question column in the input file, and th
 
 The question group columns identify questions of the form Q#_* as member of group Q#. However, Q#a and Q# will be treated as two different groups. The question group text will be determined by the longest common string of its members' question texts.
 
-The question columns store the value and text of each question. If there is no corresponding text for any question, the value will serve as the text. This is true for the question group text as well.
+The question columns store the value and text of each question. If there is no corresponding text for any question, the value will serve as the text. This is true for the question group text as well. Note the if a question has a group, then the question text for the specific question will remove its group's question text, and only keep the substring that is unique to that question.
 
 The response columns store the value and text of each response. If there is no corresponding text for any response, the value will serve as the text. This is true for the question group text as well. An error will also occur if a value is mapped to two different texts.
 

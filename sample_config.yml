@@ -20,18 +20,20 @@ input_filename_with_values: '/Volumes/IR Student Workers/Son/Class 2014 One Year
 input_filename_questions_to_text: '/Volumes/IR Student Workers/Son/Class 2014 One Year Out Survey Questions to Text.xlsx'
 input_filename_values_to_labels: '/Volumes/IR Student Workers/Son/Class 2014 One Year Out Survey Values to Labels.xlsx'
 
-# These are names of variables in the input file that you want to 
-# include in every row of the reshaped long file. They are generally 
+# These are ID of attributes in the input file that you want to 
+# treat as questions in the output file. They are generally 
 # metadata, or things you want to analyze the survey by. You don't
 # need to include your weight columns here, since they'll
-# automatically be included
+# automatically be included.
 both_attribute_and_question: [
     'V1',
     'V2'
 ]
 
 # These are columns that you want to completely ignore from your data,
-# so these columns will not show up in the output file.
+# so these columns will not show up in the output file. Make sure to 
+# use the columns' name in the original input file, not its textual 
+# name.
 columns_to_ignore: [
   'LocationAccuracy',
   'LocationLongitude',

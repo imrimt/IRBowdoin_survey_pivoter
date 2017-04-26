@@ -116,22 +116,24 @@ def main():
             else:
                 curr_question = question
 
-            question_value = row[2]
-            if pd.isnull(question_value): 
+            # store the question_id
+            question_id = row[2]
+            if pd.isnull(question_id): 
                 continue
-            question_value = int(question_value)
+            question_id = int(question_id)
 
-            question_label = row[3]
-            if pd.isnull(question_label):
+            # store the question_text
+            question_text = row[3]
+            if pd.isnull(question_text):
                 continue
             
             if not question in domain_map:                   
                 domain_map[question] = {}
 
-            if question_value in domain_map[question]:
-                print("Duplicated labels for key {} in question {}. Please resolve the issue! Exiting...".format(question_value, question))
+            if question_id in domain_map[question]:
+                print("Duplicated labels for key {} in question {}. Please resolve the issue! Exiting...".format(question_id, question))
                 quit()
-            domain_map[question][question_value] = question_label
+            domain_map[question][question_id] = question_text
 
         return domain_map
 
@@ -178,14 +180,8 @@ def main():
         else:
             midValue = float(domain_array[int(domain_length/2) - 1] + domain_array[int(domain_length/2)]) / 2.0
 
-        # for i in range(0, domain_length):
-        #     if (domain_array[i] < midValue):
-        #         map_result[str(domain_array[i])] = str(int(np.floor(domain_array[i] - midValue)))
-        #     elif (domain_array[i] > midValue):
-        #         map_result[str(domain_array[i])] = str(int(np.ceil(domain_array[i] - midValue)))
-        #     else:
-        #         map_result[str(domain_array[i])] = 0
-
+        # go through each element, and compute the difference with the median.
+        # the results are rounded up (in magnitude) to the nearest integer.
         for i in range(0, domain_length):
             if (domain_array[i] < midValue):
                 map_result[int(domain_array[i])] = int(np.floor(domain_array[i] - midValue))
@@ -196,22 +192,44 @@ def main():
 
         return map_result
 
+    # check if the domain of a particular question is valid. Return
+    # empty if the domain doesn't exist, and prints out warnings if 
+    # there are peculiar value in the domain (discontinuity, negative
+    # values, etc.)
     def check_domain(domain_array, question):
         prev = domain_array[0]
         for item in domain_array[1:]:
             if (item <= 0):
-                # tqdm.write((WARNING_TAG + "There is a non-positive value in the domain of question {}").format(question))
                 warning_messages.append((WARNING_TAG + "There is a non-positive value in the domain of question {}").format(question))
                 return
             if (item != prev + 1):
-                # tqdm.write((WARNING_TAG + "There is discontinuity in the domain of question {}").format(question))
                 warning_messages.append((WARNING_TAG + "There is discontinuity in the domain of question {}").format(question))
                 return
             prev = item
 
-    # update group_text according to their group name using the group map
+    # update group_text according to their group name using the group map.
+    # Also, remove '-' at the end of the text if possible.
     def update_group_text(group_name):
-        return group_map[group_name]
+        temp_text = group_map[group_name]
+        if (temp_text.endswith('-')):
+            temp_text = temp_text[:-1]
+        return temp_text
+
+    # update question_text (removing the group part), and remove special 
+    # characters at the beginning (..., -, &, etc.). The first character
+    # should be a letter or a digit.
+    def update_question_text(question_text, group_text):
+
+        # remove the group_text part from the question
+        if (question_text != group_text):
+            question_text = question_text.replace(group_text, '')
+
+        # remove non-digit or non-letter character at the beginning
+        # of the question text
+        while not (question_text[0].isalpha() or question_text[0].isdigit()):
+            question_text = question_text[1:]
+
+        return question_text
 
     # find the largest common string from the beginninng of sa and sb
     def common_start(sa, sb):
@@ -300,7 +318,7 @@ def main():
     for name in tqdm(varnames, desc="Renaming Columns"):
         if not name.startswith("Q"):        
             if name in varmap:
-                rename = "Attribute - {}".format(varmap[name])
+                rename = "{}".format(varmap[name])
 
                 # if there is a duplicate in the label of a name
                 if rename in attributes_rename_backward:
@@ -427,6 +445,9 @@ def main():
 
             question_text = v if v in attributes else varmap[v]
 
+            if (question_text == "Q1_TEXT"):
+                print(v)
+
             # create group if there is a '_'
             if '_' in v:
                 group_name_var = v[:v.find('_')]
@@ -464,6 +485,13 @@ def main():
     for row in dataframes:
         row['Question - Group Text'] = row['Question - Group ID'].apply(update_group_text)
 
+    # second parse through the data frame to update question text
+    for row in dataframes:
+        question_text = row['Question - Text']
+        group_text = row['Question - Group Text']
+
+        row['Question - Text'] = question_text.apply(update_question_text, args=(group_text[0],))
+
     # flush out warning messages
     for warning in warning_messages:
         print(warning)
@@ -472,7 +500,13 @@ def main():
     # =============================================
     # FINAL PRODUCT
     # ============================================= 
+
+    # print(list(map(lambda x: "Attribute - {}".format(x), attribute_col)))
+
     final_product = pd.concat(dataframes)
+    final_product.rename(index=str, \
+        columns=dict(zip(attribute_col, list(map(lambda x: "Attribute - {}".format(x), attribute_col)))),
+        inplace=True)
     final_product = final_product[final_product['Response - Text'].notnull()]
     final_product = final_product[final_product['Response - Value'].str.strip() != '']
     final_product = final_product.replace("#NULL!", "No response")
@@ -494,5 +528,3 @@ if __name__ == "__main__":
     start_time = time.time()
     main()
     print("[TOTAL RUNNING TIME] : {} seconds".format(time.time() - start_time))
-
-    
