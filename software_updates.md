@@ -60,4 +60,5 @@ E.g:
 - Change the column names, and fix that only add the "Attribute" tag to the column name, not to the value/text fields in the data (when an attribute is treated as a question).
 - Remove group text from questions.
 - Remove the hyphen from question group text if it is the last or first character.
-- Remove the ellipses from question text if it's the first character. Any non-digit or non-alphabetic should be removed as well. 
+- Remove the ellipses from question text if it's the first character. Any non-digit or non-alphabetic should be removed as well.
+- Notes: There is an issue with grouping, for Q1 versus Q1_TEXT. The latter will be treated as group Q1. This results a conflict with the original Q1, making the question text for the Q1_TEXT column only consists of "TEXT" - hard to explain, but will show.
