@@ -40,6 +40,8 @@ def main():
     curr_map = {}
     warning_messages = []
 
+    # parse the yaml file and store information into the appropriate
+    # variables
     with open(config_file, 'r') as ymlfile:
         try:
             cfg = yaml.load(ymlfile)
@@ -59,13 +61,16 @@ def main():
     exclude_from_domain_analysis = [item.lower() for item in exclude_from_domain_analysis]
     output_file = '{}_{}_pivoted.xlsx'.format(year, survey_name.lower().replace(' ', '_'))
 
-
     # =============================================
     # FUNCTIONS DEFINITION
     # ============================================= 
 
-    # get the labels (text) for columns' variables
+    # get the labels (text) for columns' variables. The label_list (returned 
+    # value) is structured as a list that contains the corresponding textual
+    # label for the columns' name of the original data frame, ordered in the
+    # same as the order of the columns.
     def get_variable_labels(filename, varnames):
+
         # open the file here
         try:
             l_v_df = pd.read_excel(filename)
@@ -74,12 +79,16 @@ def main():
             print("Error log: {}".format(e))
             quit()
 
+        # clean data frame for \t, \r and \n symbols
         clean_dataframe(l_v_df)
 
+        # create a map from Name column to Label column
         l_v_map = dict(zip(l_v_df["Name"], l_v_df["Label"]))
         
         label_list = []
 
+        # going through the relevant column names, and find the right textual
+        # label for it
         for name in varnames:
             if name in l_v_map:
                 label_list.append(l_v_map[name])
@@ -89,8 +98,12 @@ def main():
         
         return label_list
 
-    # obtain the domain for each question
+    # obtain the domain for each question. The domain map is structured as a 
+    # map of maps, with the key being the question ID. The inner map has keys
+    # being the question's possible response numeric values, and the values 
+    # being the corresponding text.
     def get_variable_value_domain(filename):
+
         try:
             range_df = pd.read_excel(filename)
         except Exception as e:
@@ -98,74 +111,83 @@ def main():
             print("Error log: {}".format(e))
             quit()
 
+        # rename the columns in the filename for easy use
         range_df.rename(columns=dict(zip(range_df.columns, ["Question", "Value", "Label"])), inplace=True)
 
+        # clean data frame for \t, \r and \n symbols
         clean_dataframe(range_df)
 
         domain_map = {}
 
         curr_question = ""
 
+        # go through each row of the data frame, and update the domain of the 
+        # current question, or create a new domain for a new question. If the 
+        # question id is null, then the response value belongs to the current
+        # question, otherwise, a new question with new domain should be added
+        # to the map.
         for row in range_df.itertuples():
             index = row[0]
 
             question = row[1]
 
+            # store the question id (served as the key)
             if pd.isnull(question):
                 question = curr_question
             else:
                 curr_question = question
 
-            # store the question_id
-            question_id = row[2]
-            if pd.isnull(question_id): 
+            # store the response_value
+            response_value = row[2]
+            if pd.isnull(response_value): 
                 continue
-            question_id = int(question_id)
+            response_value = int(response_value)
 
-            # store the question_text
-            question_text = row[3]
-            if pd.isnull(question_text):
+            # store the response_text
+            response_text = row[3]
+            if pd.isnull(response_text):
                 continue
             
+            # there is no domain for the question
             if not question in domain_map:                   
                 domain_map[question] = {}
 
-            if question_id in domain_map[question]:
-                print("Duplicated labels for key {} in question {}. Please resolve the issue! Exiting...".format(question_id, question))
+            if response_value in domain_map[question]:
+                print("Duplicated labels for key {} in question {}. Please resolve the issue! Exiting...".format(response_value, question))
                 quit()
-            domain_map[question][question_id] = question_text
+            domain_map[question][response_value] = response_text
 
         return domain_map
 
-    # Anything above the median should get the value of 0, below of 1. If the median can be computed (
-    # i.e there are odd number of elements in the domain), then the median has value of 0.5.
+    # Anything above the median should get the value of 0, below of 1. If the 
+    # median can be computed (i.e there are odd number of elements in the 
+    # domain), then the median has value of 0.5.
     def get_count_neg_map(domain_array):
+
         domain_length = len(domain_array)
         map_result = {}
 
+        # no domain --> return empty map
         if (domain_length == 0):
             return map_result
 
-        # below median --> 1
-        for i in range(0, int(np.floor(domain_length/2))):
-            # map_result[str(domain_array[i])] = 1
+        # below median --> takes on value of 1
+        for i in range(0, int(np.floor(domain_length/2))):            
             map_result[int(domain_array[i])] = 1
 
-        # above median --> 0
-        for i in range(int(np.ceil(domain_length/2)), domain_length):
-            # map_result[str(domain_array[i])] = 0
+        # above median --> takes on value of 0
+        for i in range(int(np.ceil(domain_length/2)), domain_length):            
             map_result[int(domain_array[i])] = 0
 
-        # if central point exists --> 0.5
-        if domain_length % 2 != 0:
-            # map_result[str(domain_array[int(np.floor(domain_length/2))])] = 0.5
+        # if central point exists --> takes on value of 0.5
+        if domain_length % 2 != 0:            
             map_result[int(domain_array[int(np.floor(domain_length/2))])] = 0.5
 
         return map_result
 
-    # Shift all values by the median. The median is computed by taking the middle value (averages for 
-    # even length). Then, all value is offset by the value of the median, rounding up to the nearest 
-    # integer (in magnitude). 
+    # Shift all values by the median. The median is computed by taking the 
+    # middle value (averages for even length). Then, all value is offset by the 
+    # value of the median, rounding up to the nearest integer (in magnitude). 
     def get_normalized_by_median_map(domain_array):
         
         map_result = {}

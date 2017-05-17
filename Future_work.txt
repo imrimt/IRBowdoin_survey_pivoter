@@ -1,0 +1,2 @@
+- Currently: if the abbr option is selected, and there is no short name, then the original name is used. Would be good to change it so that if there is a long name, then use the long name (even in abbr mode).
+- More commenting.
